@@ -1,6 +1,6 @@
 import fs from "fs";
 import fetch from "node-fetch";
-import cheerio from "cheerio";
+import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
 const PLATFORM_ID = 7; // NES
@@ -19,7 +19,7 @@ async function scrapePlatform(platformId) {
     const $ = cheerio.load(html);
 
     const cards = $("div.card.border-primary");
-    if (cards.length === 0) break; // hết trang
+    if (cards.length === 0) break;
 
     cards.each((_, el) => {
       const img = $(el).find("img").attr("src")?.trim() || "";
@@ -34,7 +34,6 @@ async function scrapePlatform(platformId) {
       results.push({ id, title, region, date, platform, img });
     });
 
-    // Kiểm tra có trang kế tiếp không
     const hasNext = $("a.page-link:contains('Next')").length > 0;
     if (!hasNext) break;
     page++;
@@ -45,18 +44,13 @@ async function scrapePlatform(platformId) {
 
 async function main() {
   console.log("📥 Scraping started...");
-
   const games = await scrapePlatform(PLATFORM_ID);
-
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
-
   const csvHeader = "id,title,region,release_date,platform,image_url\n";
   const csvData = games
-    .map(g =>
-      [g.id, g.title, g.region, g.date, g.platform, g.img]
-        .map(x => `"${x.replace(/"/g, '""')}"`)
-        .join(",")
-    )
+    .map(g => [g.id, g.title, g.region, g.date, g.platform, g.img]
+      .map(x => `"${x.replace(/"/g, '""')}"`)
+      .join(","))
     .join("\n");
 
   fs.writeFileSync(OUTPUT_FILE, csvHeader + csvData);
