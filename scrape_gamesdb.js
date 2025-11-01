@@ -7,11 +7,12 @@ const PLATFORM_ID = 7; // NES
 const PLATFORM_NAME = "NES";
 const OUTPUT_DIR = "data";
 const OUTPUT_FILE = `${OUTPUT_DIR}/${PLATFORM_NAME}_games.csv`;
+const MAX_CONCURRENT = 10; // số request đồng thời
 
-/** Lấy danh sách toàn bộ ID game trong 1 platform (có phân trang) */
+// 🧩 Hàm lấy danh sách ID game theo platform (duyệt qua tất cả trang)
 async function collectAllGameList(platformId) {
   let page = 1;
-  let allIds = new Set();
+  const ids = new Set();
 
   while (true) {
     const url = `${BASE_URL}/list_games.php?platform_id=${platformId}&page=${page}`;
@@ -19,33 +20,32 @@ async function collectAllGameList(platformId) {
 
     const res = await fetch(url);
     if (!res.ok) break;
-
     const html = await res.text();
     const $ = cheerio.load(html);
 
-    const ids = $("a[href*='game.php?id=']")
+    const newIds = $("a[href*='game.php?id=']")
       .map((_, el) => {
         const href = $(el).attr("href");
-        const m = href.match(/id=(\d+)/);
+        const m = href.match(/id=(\\d+)/);
         return m ? m[1] : null;
       })
       .get()
       .filter(Boolean);
 
-    if (ids.length === 0) break;
+    if (newIds.length === 0) break;
 
-    ids.forEach(id => allIds.add(id));
+    newIds.forEach(id => ids.add(id));
 
     const hasNext = $("a.page-link:contains('Next')").length > 0;
     if (!hasNext) break;
     page++;
   }
 
-  console.log(`✅ Found ${allIds.size} games total`);
-  return Array.from(allIds);
+  console.log(`✅ Found ${ids.size} games total`);
+  return Array.from(ids);
 }
 
-/** Lấy chi tiết từng game */
+// 🎮 Lấy thông tin chi tiết của từng game
 async function getGameDetail(id) {
   const url = `${BASE_URL}/game.php?id=${id}`;
   const res = await fetch(url);
@@ -88,7 +88,34 @@ async function getGameDetail(id) {
   };
 }
 
-/** Ghi dữ liệu ra CSV */
+// 🧠 Hàng đợi song song có giới hạn
+async function processWithLimit(items, limit, fn) {
+  const results = [];
+  const executing = [];
+
+  for (const item of items) {
+    const p = fn(item).then(res => results.push(res)).catch(err => {
+      console.warn(`⚠️ Error fetching ${item}: ${err.message}`);
+    });
+
+    executing.push(p);
+
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+      // loại bỏ những promise đã xong
+      for (let i = executing.length - 1; i >= 0; i--) {
+        if (executing[i].status === "fulfilled" || executing[i].status === "rejected") {
+          executing.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  await Promise.allSettled(executing);
+  return results;
+}
+
+// 💾 Lưu dữ liệu ra CSV
 function saveToCSV(data, filePath) {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
   const header = Object.keys(data[0]).join(",") + "\n";
@@ -103,24 +130,18 @@ function saveToCSV(data, filePath) {
   console.log(`💾 Saved ${data.length} records → ${filePath}`);
 }
 
-/** Chạy toàn bộ quy trình */
+// 🚀 Chạy toàn bộ
 async function run() {
   const ids = await collectAllGameList(PLATFORM_ID);
-  const results = [];
+  console.log(`🚀 Start fetching ${ids.length} games (max ${MAX_CONCURRENT} concurrent)`);
 
-  for (const [i, id] of ids.entries()) {
-    try {
-      console.log(`🎮 [${i + 1}/${ids.length}] Fetching game ID=${id}`);
-      const detail = await getGameDetail(id);
-      results.push(detail);
-      // Giới hạn nhẹ để tránh bị chặn
-      await new Promise(r => setTimeout(r, 1500));
-    } catch (err) {
-      console.warn(`⚠️ Skipped ${id}: ${err.message}`);
-    }
+  const details = await processWithLimit(ids, MAX_CONCURRENT, getGameDetail);
+
+  if (details.length > 0) {
+    saveToCSV(details, OUTPUT_FILE);
+  } else {
+    console.log("⚠️ No data fetched.");
   }
-
-  if (results.length > 0) saveToCSV(results, OUTPUT_FILE);
 }
 
 run().catch(err => {
