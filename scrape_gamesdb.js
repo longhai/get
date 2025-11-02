@@ -1,6 +1,5 @@
-// scrape_gamesdb_csv.js
-// Node >= 14+
-// Requires: node-fetch@2, cheerio@1
+// scrape_gamesdb.js
+// Node >=14+, chỉ xuất CSV
 import fs from "fs";
 import path from "path";
 import fetch from "node-fetch";
@@ -11,8 +10,8 @@ const PLATFORM_ID = 7; // NES
 const LIST_URL = `${BASE}/list_games.php`;
 const OUTPUT_DIR = "data";
 const OUTPUT_CSV = path.join(OUTPUT_DIR, `NES_games.csv`);
-const CONCURRENCY = 5; // số request đồng thời
-const REQUEST_DELAY_MS = 200;
+const CONCURRENCY = 3;          // request đồng thời thấp để tránh block
+const REQUEST_DELAY_MS = 500;   // delay giữa các request
 
 function log(...args) {
   console.log(new Date().toISOString(), ...args);
@@ -22,7 +21,12 @@ function log(...args) {
 async function fetchHtml(url, tries = 3) {
   for (let i = 0; i < tries; i++) {
     try {
-      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115.0.0.0 Safari/537.36",
+          "Referer": BASE
+        }
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (err) {
@@ -33,10 +37,11 @@ async function fetchHtml(url, tries = 3) {
   throw new Error(`Failed to fetch ${url}`);
 }
 
-// bước 1: collect id + title
+// bước 1: lấy id + title
 async function collectGameList(platformId) {
   const ids = new Map();
   let page = 1;
+
   while (true) {
     const url = `${LIST_URL}?platform_id=${platformId}&page=${page}`;
     log(`Fetching list page ${page}`);
@@ -45,6 +50,7 @@ async function collectGameList(platformId) {
 
     const $ = load(html);
     const cards = $(".card.border-primary");
+
     if (cards.length) {
       cards.each((_, el) => {
         const anchor = $(el).find(".card-header a[href*='game.php?id=']").first();
@@ -59,6 +65,7 @@ async function collectGameList(platformId) {
         }
       });
     } else {
+      // fallback anchor
       $("a[href*='game.php?id=']").each((_, a) => {
         const href = $(a).attr("href");
         const m = href.match(/id=(\d+)/);
@@ -70,15 +77,18 @@ async function collectGameList(platformId) {
       });
     }
 
+    // check next page
     const hasNext = $("a.page-link").filter((i, el) => $(el).text().trim().toLowerCase() === "next").length > 0;
     if (!hasNext) break;
+
     page++;
     await new Promise(r => setTimeout(r, 300));
   }
+
   return Array.from(ids.values());
 }
 
-// normalize keys
+// normalize key
 function normalizeKey(k) {
   if (!k) return k;
   const s = k.toLowerCase().replace(/\s+/g, "");
@@ -101,8 +111,8 @@ function parseGamePage(html, pageUrl) {
   const info = {};
 
   info.Title = $(".card-header h1").first().text().trim() || $("h1").first().text().trim() || "";
-  info.URL = pageUrl;
   info.AKA = $(".card-header h6.text-muted").first().text().replace(/Also know as[:：]?/i, "").trim() || "";
+  info.URL = pageUrl;
 
   $("div.card-body p").each((_, p) => {
     const text = $(p).text().trim();
@@ -134,14 +144,13 @@ function parseGamePage(html, pageUrl) {
     }
   });
 
-  // đảm bảo tất cả key
   const keys = ["Title","AKA","Platform","Region","Country","Developer","Publisher","ReleaseDate","Players","Co-op","Genre","ESRB","URL"];
   const out = {};
   for (const k of keys) out[k] = info[k] || "";
   return out;
 }
 
-// fetch chi tiết từng game
+// fetch chi tiết game
 async function fetchGameDetail(id) {
   const url = `${BASE}/game.php?id=${id}`;
   try {
@@ -174,13 +183,7 @@ async function processWithPool(items, workerFn, concurrency = CONCURRENCY) {
 // ghi CSV
 function saveCsv(filePath, rows) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  if (!rows.length) {
-    const header = ["Title","AKA","Platform","Region","Country","Developer","Publisher","ReleaseDate","Players","Co-op","Genre","ESRB","URL"];
-    fs.writeFileSync(filePath, header.join(",") + "\n", "utf8");
-    log("Wrote empty CSV with header");
-    return;
-  }
-  const header = Object.keys(rows[0]);
+  const header = ["Title","AKA","Platform","Region","Country","Developer","Publisher","ReleaseDate","Players","Co-op","Genre","ESRB","URL"];
   const lines = [header.join(",")];
   for (const r of rows) {
     const line = header.map(h => `"${String(r[h] || "").replace(/"/g,'""').replace(/\r?\n|\r/g,' ')}"`).join(",");
@@ -193,7 +196,6 @@ function saveCsv(filePath, rows) {
 // main
 async function main() {
   log("Start scraping NES games");
-
   const list = await collectGameList(PLATFORM_ID);
   log(`Collected ${list.length} game ids`);
 
@@ -203,7 +205,6 @@ async function main() {
   }
 
   const fetched = await processWithPool(list.map(g => g.id), fetchGameDetail, CONCURRENCY);
-
   saveCsv(OUTPUT_CSV, fetched);
   log("Done.");
 }
