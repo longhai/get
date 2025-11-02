@@ -6,7 +6,8 @@ const BASE_LIST_URL = "https://thegamesdb.net/list_games.php";
 const BASE_GAME_URL = "https://thegamesdb.net/game.php";
 const PLATFORM_ID = 7; // NES
 const OUTPUT_DIR = "data";
-const OUTPUT_FILE = `${OUTPUT_DIR}/nes_games_full.csv`;
+const OUTPUT_FILE = `${OUTPUT_DIR}/nes_games_fast.csv`;
+const CONCURRENT = 5; // số game fetch song song
 
 async function fetchHTML(url) {
   const res = await fetch(url);
@@ -14,6 +15,7 @@ async function fetchHTML(url) {
   return await res.text();
 }
 
+// Lấy tất cả ID game từ list_games.php
 async function scrapeGameList(platformId) {
   let page = 1;
   let gameIds = [];
@@ -41,9 +43,9 @@ async function scrapeGameList(platformId) {
   return gameIds;
 }
 
+// Lấy thông tin chi tiết từng game
 async function scrapeGame(id) {
   const url = `${BASE_GAME_URL}?id=${id}`;
-  console.log(`🔹 Scraping game id ${id}`);
   const html = await fetchHTML(url);
   const $ = cheerio.load(html);
 
@@ -53,7 +55,6 @@ async function scrapeGame(id) {
   const esrb = $("p:contains('ESRB Rating:')").text().replace("ESRB Rating:", "").trim() || "";
   const genres = $("p:contains('Genre(s):')").text().replace("Genre(s):", "").trim() || "";
 
-  // left card contains Platform, Region, Country, Developer, Publisher, ReleaseDate, Players, Co-op
   const leftCard = $("div.col-12.col-md-3.col-lg-2");
   const getText = (prefix) => leftCard.find(`p:contains('${prefix}')`).text().replace(prefix, "").trim() || "";
 
@@ -66,33 +67,34 @@ async function scrapeGame(id) {
   const players = getText("Players:");
   const coOp = getText("Co-op:");
 
-  const cover = leftCard.find("img.cover.cover-offset").attr("src") || "";
-
-  // Fanarts
-  const fanarts = [];
-  $("div.card:contains('Other Graphic(s)') img").each((_, img) => {
-    const src = $(img).attr("src")?.trim();
-    if (src) fanarts.push(src);
-  });
-
   return {
-    id,
-    title,
-    alias,
-    platform,
-    region,
-    country,
-    developers,
-    publishers,
-    releaseDate,
-    players,
-    coOp,
-    overview,
-    esrb,
-    genres,
-    cover,
-    fanarts: fanarts.join("|")
+    title, alias, platform, region, country,
+    developers, publishers, releaseDate, players, coOp,
+    overview, esrb, genres
   };
+}
+
+// Chạy song song với giới hạn CONCURRENT
+async function parallelScrape(ids) {
+  const results = [];
+  let index = 0;
+
+  async function worker() {
+    while (index < ids.length) {
+      const id = ids[index++];
+      try {
+        const game = await scrapeGame(id);
+        results.push(game);
+        console.log(`✅ Scraped: ${game.title}`);
+      } catch (err) {
+        console.error(`❌ Failed id ${id}: ${err.message}`);
+      }
+    }
+  }
+
+  const workers = Array.from({ length: CONCURRENT }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 async function main() {
@@ -103,27 +105,18 @@ async function main() {
   const ids = await scrapeGameList(PLATFORM_ID);
   console.log(`✅ Found ${ids.length} games.`);
 
-  const results = [];
-  for (const id of ids) {
-    try {
-      const game = await scrapeGame(id);
-      results.push(game);
-    } catch (err) {
-      console.error(`❌ Failed to scrape game ${id}:`, err.message);
-    }
-  }
+  const results = await parallelScrape(ids);
 
   const headers = [
-    "id","title","alias","platform","region","country","developers",
-    "publishers","releaseDate","players","coOp","overview","esrb","genres","cover","fanarts"
+    "title","alias","platform","region","country","developers",
+    "publishers","releaseDate","players","coOp","overview","esrb","genres"
   ];
   const csvData = results.map(g =>
-    headers.map(h => `"${(g[h] || "").toString().replace(/"/g, '""')}"`).join(",")
+    headers.map(h => `"${(g[h] || "").replace(/"/g, '""')}"`).join(",")
   );
+
   fs.writeFileSync(OUTPUT_FILE, headers.join(",") + "\n" + csvData.join("\n"));
   console.log(`✅ Saved ${results.length} games to ${OUTPUT_FILE}`);
 }
 
-main().catch(err => {
-  console.error("❌ Fatal error:", err);
-});
+main().catch(err => console.error("❌ Fatal error:", err));
