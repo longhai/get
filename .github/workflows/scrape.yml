@@ -3,7 +3,7 @@ name: Scrape NES GamesDB
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * 0"
+    - cron: '0 3 * * 0' # mỗi Chủ Nhật lúc 3h sáng UTC (10h sáng Việt Nam)
 
 jobs:
   scrape:
@@ -12,28 +12,34 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 🧾 Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: ⚙️ Setup Node.js (latest)
+        uses: actions/setup-node@v4
         with:
-          node-version: latest
+          node-version: 'latest'
 
-      - name: Create data folder
-        run: mkdir -p data
+      - name: 📦 Install dependencies
+        run: |
+          npm install cheerio@1 node-fetch@2 --no-save
+          mkdir -p data
 
-      - name: Install dependencies
-        run: npm install
+      - name: 🕹️ Run scraper
+        run: |
+          echo "Running scrape_gamesdb.js ..."
+          node scrape_gamesdb.js
 
-      - name: Run scraper
-        run: node scrape_gamesdb.js
+      - name: 📊 Show output files
+        run: |
+          ls -l data || true
+          echo "Preview of CSV:"
+          head -n 10 data/NES_games.csv || echo "CSV missing or empty"
 
-      - name: Show CSV info
-        run: ls -l data && head -n 5 data/NES_games.csv || echo "CSV missing"
-
-      - name: Commit results
+      - name: 💾 Commit results
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "actions@github.com"
-          git add data/NES_games.csv || echo "No CSV"
-          git commit -m "Update scraped data" || echo "No changes"
-          git push
+          git add data/*.csv data/*.json || echo "No data files found"
+          git commit -m "Update scraped NES data" || echo "No changes to commit"
+          git push || echo "No permission or nothing to push"
