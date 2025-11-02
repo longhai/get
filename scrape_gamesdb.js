@@ -4,116 +4,118 @@ import puppeteer from "puppeteer";
 import * as cheerio from "cheerio";
 
 const PLATFORM_ID = 7; // NES
-const BASE_URL = `https://thegamesdb.net/list_games.php?platform_id=${PLATFORM_ID}`;
-const OUTPUT_DIR = "data";
-const OUTPUT_FILE = path.join(OUTPUT_DIR, `NES_games.csv`);
+const OUTPUT_DIR = "./data";
+const OUTPUT_FILE = path.join(OUTPUT_DIR, "NES_games.csv");
 
-function delay(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-function log(m) {
-  console.log(`[${new Date().toISOString()}] ${m}`);
-}
-
-function toCSV(data) {
-  if (!data.length) return "";
-  const headers = Object.keys(data[0]);
-  const rows = data.map(d =>
-    headers.map(h => `"${String(d[h] || "").replace(/"/g, '""')}"`).join(",")
-  );
-  return [headers.join(","), ...rows].join("\n");
-}
-
-async function scrapeListPage(page, pageNum) {
-  const url = `${BASE_URL}&page=${pageNum}`;
-  await page.goto(url, { waitUntil: "networkidle2" });
-  await delay(1000);
-
-  const html = await page.content();
-  const $ = cheerio.load(html);
-  const cards = $(".card.border-primary");
-  const games = [];
-
-  cards.each((_, el) => {
-    const title = $(el).find(".card-header a").text().trim();
-    const href = $(el).find(".card-header a").attr("href");
-    if (title && href) {
-      games.push({
-        title,
-        url: new URL(href, "https://thegamesdb.net/").href,
-      });
-    }
+async function launchBrowser() {
+  return await puppeteer.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-software-rasterizer",
+    ],
   });
-
-  const hasNext =
-    $(".page-link").filter((_, el) => $(el).text().trim() === "Next").length > 0;
-
-  return { games, hasNext };
 }
 
-async function scrapeGameDetails(page, game) {
-  try {
-    await page.goto(game.url, { waitUntil: "networkidle2" });
-    await delay(500);
-    const html = await page.content();
+async function fetchHTML(page, url) {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  return await page.content();
+}
+
+async function scrapeList(page, platformId) {
+  let games = [];
+  let currentPage = 1;
+
+  while (true) {
+    const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${currentPage}`;
+    console.log(`→ Fetch list page ${currentPage}: ${url}`);
+    const html = await fetchHTML(page, url);
     const $ = cheerio.load(html);
 
-    const getText = (label) =>
-      $(`p:contains('${label}')`).text().replace(label, "").trim() || "";
+    const rows = $(".game_list_item a").toArray();
+    if (rows.length === 0) break;
 
-    const data = {
-      Title: $("h1").first().text().trim() || game.title,
-      Platform: getText("Platform:"),
-      Region: getText("Region:"),
-      Country: getText("Country:"),
-      Developer: getText("Developer:"),
-      Publisher: getText("Publisher:"),
-      ReleaseDate: getText("Release Date:"),
-      Players: getText("Players:"),
-      Coop: getText("Co-op:"),
-      Genre: getText("Genre(s):"),
-      Overview: $(".game-overview").text().trim(),
-      URL: game.url,
-    };
+    for (const a of rows) {
+      const href = $(a).attr("href");
+      const title = $(a).text().trim();
+      if (href && title) {
+        const match = href.match(/id=(\d+)/);
+        if (match) games.push({ id: match[1], title });
+      }
+    }
 
-    return data;
-  } catch (e) {
-    log(`❌ ${game.title} error: ${e.message}`);
-    return null;
+    const next = $(".pagination a:contains('Next')").length > 0;
+    if (!next) break;
+    currentPage++;
   }
+
+  return games;
+}
+
+async function scrapeGameDetail(page, id) {
+  const url = `https://thegamesdb.net/game.php?id=${id}`;
+  const html = await fetchHTML(page, url);
+  const $ = cheerio.load(html);
+
+  const getText = (label) =>
+    $(`b:contains("${label}")`)
+      .parent()
+      .text()
+      .replace(label, "")
+      .trim() || "";
+
+  return {
+    Title: $("h1").first().text().trim(),
+    Developer: getText("Developer:"),
+    Publisher: getText("Publisher:"),
+    Genre: getText("Genres:"),
+    Players: getText("Players:"),
+    ReleaseDate: getText("Release Date:"),
+    Overview: $(".game_overview").text().trim().replace(/\s+/g, " "),
+  };
+}
+
+async function saveCSV(filename, data) {
+  if (data.length === 0) return;
+  const headers = Object.keys(data[0]);
+  const rows = [headers.join(",")];
+
+  for (const row of data) {
+    const values = headers.map((h) =>
+      `"${String(row[h] || "").replace(/"/g, '""')}"`
+    );
+    rows.push(values.join(","));
+  }
+
+  fs.mkdirSync(path.dirname(filename), { recursive: true });
+  fs.writeFileSync(filename, rows.join("\n"), "utf8");
 }
 
 async function main() {
-  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-
-  const browser = await puppeteer.launch({ headless: true });
+  console.log("🚀 Bắt đầu scrape NES GamesDB...");
+  const browser = await launchBrowser();
   const page = await browser.newPage();
 
-  log("🔧 Bắt đầu quét danh sách game NES...");
-  let allGames = [];
-  let pageNum = 1;
+  const gameList = await scrapeList(page, PLATFORM_ID);
+  console.log(`📄 Tìm thấy ${gameList.length} game.`);
 
-  while (true) {
-    const { games, hasNext } = await scrapeListPage(page, pageNum);
-    allGames.push(...games);
-    log(`Trang ${pageNum}: lấy được ${games.length} game`);
-    if (!hasNext) break;
-    pageNum++;
+  let results = [];
+
+  for (const [i, g] of gameList.entries()) {
+    try {
+      console.log(`🔍 [${i + 1}/${gameList.length}] ${g.title}`);
+      const detail = await scrapeGameDetail(page, g.id);
+      results.push(detail);
+    } catch (err) {
+      console.error(`❌ Lỗi lấy game ${g.title}:`, err.message);
+    }
   }
 
-  log(`📜 Tổng cộng ${allGames.length} game.`);
-
-  const detailed = [];
-  for (let i = 0; i < allGames.length; i++) {
-    log(`→ [${i + 1}/${allGames.length}] ${allGames[i].title}`);
-    const info = await scrapeGameDetails(page, allGames[i]);
-    if (info) detailed.push(info);
-    await delay(400);
-  }
-
-  const csv = toCSV(detailed);
-  fs.writeFileSync(OUTPUT_FILE, csv);
-  log(`✅ Đã lưu ${detailed.length} game vào ${OUTPUT_FILE}`);
+  await saveCSV(OUTPUT_FILE, results);
+  console.log(`✅ Đã lưu ${results.length} game vào ${OUTPUT_FILE}`);
 
   await browser.close();
 }
