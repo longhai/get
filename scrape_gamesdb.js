@@ -4,24 +4,42 @@ import * as cheerio from "cheerio";
 
 const PLATFORMS = [7, 6]; // NES, SNES
 const OUTPUT_DIR = "data";
-const CONCURRENCY = 10; // số game song song mỗi batch
-const FETCH_TIMEOUT = 15000; // timeout 15s
-const RETRY_LIMIT = 3; // số lần thử lại khi lỗi
+const CACHE_DIR = `${OUTPUT_DIR}/cache`;
+const CONCURRENCY = process.env.GITHUB_ACTIONS ? 4 : 10;
+const FETCH_TIMEOUT = 15000;
+const RETRY_LIMIT = 3;
 
-// Helper fetch có timeout & retry
-async function safeFetch(url, retry = 0) {
+// Tạo thư mục cần thiết
+if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR);
+
+// Delay ngẫu nhiên
+function randomDelay() {
+  return new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+}
+
+// Fetch có cache + retry + timeout
+async function cachedFetch(url, cacheFile, retry = 0) {
+  if (fs.existsSync(cacheFile)) {
+    const cached = fs.readFileSync(cacheFile, "utf8");
+    if (cached.trim()) return cached;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   try {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    const html = await res.text();
+    fs.writeFileSync(cacheFile, html);
+    return html;
   } catch (err) {
     clearTimeout(timeout);
     if (retry < RETRY_LIMIT) {
-      console.warn(`⚠️ Fetch lỗi, thử lại (${retry + 1}/${RETRY_LIMIT}) → ${url}`);
-      return await safeFetch(url, retry + 1);
+      console.warn(`⚠️ Fetch lỗi (${retry + 1}/${RETRY_LIMIT}) → ${url}`);
+      await randomDelay();
+      return await cachedFetch(url, cacheFile, retry + 1);
     } else {
       console.error(`❌ Bỏ qua: ${url}`);
       return "";
@@ -31,47 +49,57 @@ async function safeFetch(url, retry = 0) {
 
 // Lấy tên platform
 async function getPlatformName(platformId) {
-  const html = await safeFetch(`https://thegamesdb.net/list_games.php?platform_id=${platformId}`);
+  const cacheFile = `${CACHE_DIR}/platform_${platformId}.html`;
+  const html = await cachedFetch(`https://thegamesdb.net/list_games.php?platform_id=${platformId}`, cacheFile);
   const $ = cheerio.load(html);
   const name = $("h1").first().text().trim();
   return name || `platform_${platformId}`;
 }
 
-// Lấy tất cả ID game (pagination)
+// Lấy danh sách ID game (cache theo platform)
 async function getAllGameIds(platformId) {
+  const cacheListFile = `${CACHE_DIR}/list_${platformId}.json`;
+  if (fs.existsSync(cacheListFile)) {
+    console.log(`📦 Dùng cache danh sách game platform ${platformId}`);
+    return JSON.parse(fs.readFileSync(cacheListFile, "utf8"));
+  }
+
   const ids = new Set();
   let page = 1;
   let hasNext = true;
 
   while (hasNext) {
     const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${page}`;
-    console.log(`📥 Lấy game từ platform ${platformId}, trang ${page}...`);
-    const html = await safeFetch(url);
+    console.log(`📥 Lấy danh sách game ${platformId}, trang ${page}...`);
+    const cacheFile = `${CACHE_DIR}/list_${platformId}_page${page}.html`;
+    const html = await cachedFetch(url, cacheFile);
     if (!html) break;
 
     const $ = cheerio.load(html);
     $("a[href*='game.php?id=']").each((_, el) => {
-      const href = $(el).attr("href");
-      const match = href.match(/game\.php\?id=(\d+)/);
+      const match = $(el).attr("href")?.match(/game\.php\?id=(\d+)/);
       if (match) ids.add(match[1]);
     });
 
     hasNext = $("a:contains('Next')").length > 0;
     page++;
+    await randomDelay();
   }
 
-  console.log(`✅ Platform ${platformId}: ${ids.size} game tìm thấy`);
-  return [...ids];
+  const allIds = [...ids];
+  fs.writeFileSync(cacheListFile, JSON.stringify(allIds, null, 2));
+  console.log(`✅ Platform ${platformId}: ${allIds.length} game tìm thấy`);
+  return allIds;
 }
 
-// Scrape chi tiết game
+// Scrape chi tiết game (dùng cache HTML)
 async function scrapeGame(id) {
-  const html = await safeFetch(`https://thegamesdb.net/game.php?id=${id}`);
+  const cacheFile = `${CACHE_DIR}/game_${id}.html`;
+  const html = await cachedFetch(`https://thegamesdb.net/game.php?id=${id}`, cacheFile);
   if (!html) return null;
 
   const $ = cheerio.load(html);
   const header = $("div.card-header").first();
-
   const title = header.find("h1").text().trim();
   if (!title) return null;
 
@@ -92,29 +120,33 @@ async function scrapeGame(id) {
   return { title, alsoKnownAs, releaseDate, region, country, developers, publishers, players, coop, esrb, genres, overview };
 }
 
-// Main
 async function main() {
-  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
-
   for (const PLATFORM_ID of PLATFORMS) {
-    console.log(`\n=== 🔍 Bắt đầu scrape platform ${PLATFORM_ID} ===`);
-
+    console.log(`\n=== 🔍 Scrape platform ${PLATFORM_ID} ===`);
     const PLATFORM_NAME = await getPlatformName(PLATFORM_ID);
     const safeName = PLATFORM_NAME.replace(/[/\\?%*:|"<>]/g, "_");
     const OUTPUT_FILE = `${OUTPUT_DIR}/${safeName}.csv`;
+    const DONE_FILE = `${OUTPUT_DIR}/${safeName}.done.json`;
 
-    const header = "title,also_known_as,release_date,region,country,developers,publishers,players,co_op,esrb,genres,overview\n";
-    fs.writeFileSync(OUTPUT_FILE, header);
+    const csvHeader = "title,also_known_as,release_date,region,country,developers,publishers,players,co_op,esrb,genres,overview\n";
+    if (!fs.existsSync(OUTPUT_FILE)) fs.writeFileSync(OUTPUT_FILE, csvHeader);
 
-    const ids = await getAllGameIds(PLATFORM_ID);
-    let done = 0;
+    const doneIds = fs.existsSync(DONE_FILE) ? new Set(JSON.parse(fs.readFileSync(DONE_FILE, "utf8"))) : new Set();
+    const allIds = await getAllGameIds(PLATFORM_ID);
+    const todo = allIds.filter(id => !doneIds.has(id));
 
-    for (let i = 0; i < ids.length; i += CONCURRENCY) {
-      const batch = ids.slice(i, i + CONCURRENCY);
+    console.log(`🧩 Tổng ${allIds.length} game (${doneIds.size} đã có, ${todo.length} còn lại)`);
+
+    let done = doneIds.size;
+    for (let i = 0; i < todo.length; i += CONCURRENCY) {
+      const batch = todo.slice(i, i + CONCURRENCY);
       const results = await Promise.all(batch.map(scrapeGame));
 
-      for (const g of results) {
+      for (let j = 0; j < batch.length; j++) {
+        const id = batch[j];
+        const g = results[j];
         if (!g) continue;
+
         const row = [
           g.title,
           g.alsoKnownAs,
@@ -129,14 +161,18 @@ async function main() {
           g.genres,
           g.overview
         ].map(v => `"${(v || "").replace(/"/g, '""')}"`).join(",");
+
         fs.appendFileSync(OUTPUT_FILE, row + "\n");
+        doneIds.add(id);
         done++;
       }
 
-      console.log(`✅ [${PLATFORM_NAME}] Đã scrape ${done}/${ids.length}`);
+      fs.writeFileSync(DONE_FILE, JSON.stringify([...doneIds]));
+      console.log(`✅ [${PLATFORM_NAME}] ${done}/${allIds.length} game`);
+      await randomDelay();
     }
 
-    console.log(`🎯 Xong platform ${PLATFORM_NAME} → ${OUTPUT_FILE}`);
+    console.log(`🎯 Hoàn tất platform ${PLATFORM_NAME} → ${OUTPUT_FILE}`);
   }
 }
 
