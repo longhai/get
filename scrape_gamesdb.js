@@ -2,9 +2,7 @@ import fs from "fs";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-const OUTPUT_DIR = "data";
-const OUTPUT_FILE = `${OUTPUT_DIR}/nes_game_detail.csv`;
-const URL = "https://thegamesdb.net/game.php?id=29289";
+const URL = "https://thegamesdb.net/game.php?id=29289"; // ví dụ game NES
 
 async function scrapeGame(url) {
   const res = await fetch(url);
@@ -33,8 +31,7 @@ async function scrapeGame(url) {
                    .filter((_, el) => $(el).text().trim().startsWith("Genre(s):"))
                    .text().replace("Genre(s):", "").trim();
 
-  // Thông tin Platform/Region/Developer/Publisher/ReleaseDate/Players/Co-op
-  const platform = $("div.card-body p:contains('Platform:') a").text().trim();
+  // Thông tin khác
   const region = $("div.card-body p:contains('Region:')").text().replace("Region:", "").trim();
   const country = $("div.card-body p:contains('Country:')").text().replace("Country:", "").trim();
   const developers = $("div.card-body p:contains('Developer') a").map((_, el) => $(el).text().trim()).get().join("; ");
@@ -43,7 +40,7 @@ async function scrapeGame(url) {
   const players = $("div.card-body p:contains('Players:')").text().replace("Players:", "").trim();
   const coop = $("div.card-body p:contains('Co-op:')").text().replace("Co-op:", "").trim();
 
-  return { title, alsoKnownAs, overview, esrb, genres, platform, region, country, developers, publishers, releaseDate, players, coop };
+  return { title, alsoKnownAs, releaseDate, region, country, developers, publishers, players, coop, esrb, genres, overview };
 }
 
 async function main() {
@@ -51,23 +48,26 @@ async function main() {
     console.log("📥 Scraping game detail...");
     const game = await scrapeGame(URL);
 
+    const platformName = "Nintendo Entertainment System (NES)";
+    const OUTPUT_DIR = "data";
+    const OUTPUT_FILE = `${OUTPUT_DIR}/${platformName}.csv`;
+
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-    const csvHeader = "title,also_known_as,overview,esrb,genres,platform,region,country,developers,publishers,release_date,players,co_op\n";
+    const csvHeader = "title,also_known_as,release_date,region,country,developers,publishers,players,co_op,esrb,genres,overview\n";
     const csvData = [
       game.title,
       game.alsoKnownAs,
-      game.overview,
-      game.esrb,
-      game.genres,
-      game.platform,
+      game.releaseDate,
       game.region,
       game.country,
       game.developers,
       game.publishers,
-      game.releaseDate,
       game.players,
-      game.coop
+      game.coop,
+      game.esrb,
+      game.genres,
+      game.overview
     ].map(x => `"${x.replace(/"/g, '""')}"`).join(",");
 
     fs.writeFileSync(OUTPUT_FILE, csvHeader + csvData);
