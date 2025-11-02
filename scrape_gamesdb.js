@@ -1,75 +1,54 @@
 import fs from "fs";
 import path from "path";
-import puppeteer from "puppeteer";
+import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const PLATFORM_ID = 7; // NES
 const OUTPUT_DIR = "./data";
 const OUTPUT_FILE = path.join(OUTPUT_DIR, "NES_games.csv");
 
-async function launchBrowser() {
-  return await puppeteer.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-software-rasterizer",
-    ],
-  });
+async function getHTML(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} at ${url}`);
+  return await res.text();
 }
 
-async function fetchHTML(page, url) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  return await page.content();
-}
-
-async function scrapeList(page, platformId) {
+async function scrapeList(platformId) {
   const games = [];
   let pageNum = 1;
 
   while (true) {
     const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${pageNum}`;
-    console.log(`📄 Đang lấy danh sách trang ${pageNum}...`);
-    const html = await fetchHTML(page, url);
+    console.log(`📄 Trang ${pageNum}...`);
+    const html = await getHTML(url);
     const $ = cheerio.load(html);
 
     const rows = $(".game_list_item a").toArray();
-    if (rows.length === 0) {
-      console.log("⚠️ Hết trang hoặc không có dữ liệu.");
-      break;
-    }
+    if (rows.length === 0) break;
 
     for (const a of rows) {
       const title = $(a).text().trim();
       const href = $(a).attr("href");
-      if (href && title) {
-        const idMatch = href.match(/id=(\d+)/);
-        if (idMatch) games.push({ id: idMatch[1], title });
-      }
+      const match = href?.match(/id=(\d+)/);
+      if (match) games.push({ id: match[1], title });
     }
 
-    const next = $(".pagination a:contains('Next')").length > 0;
-    console.log(`✅ Trang ${pageNum}: ${rows.length} game`);
-    if (!next) break;
+    const hasNext = $(".pagination a:contains('Next')").length > 0;
+    if (!hasNext) break;
     pageNum++;
   }
 
+  console.log(`✅ Tìm thấy ${games.length} game.`);
   return games;
 }
 
-async function scrapeGameDetail(page, id) {
+async function scrapeGame(id) {
   const url = `https://thegamesdb.net/game.php?id=${id}`;
-  const html = await fetchHTML(page, url);
+  const html = await getHTML(url);
   const $ = cheerio.load(html);
 
   const getText = (label) =>
-    $(`b:contains("${label}")`)
-      .parent()
-      .text()
-      .replace(label, "")
-      .trim();
+    $(`b:contains("${label}")`).parent().text().replace(label, "").trim();
 
   return {
     Title: $("h1").first().text().trim(),
@@ -83,55 +62,43 @@ async function scrapeGameDetail(page, id) {
 }
 
 async function saveCSV(file, data) {
-  if (!data.length) {
-    console.warn("⚠️ Không có dữ liệu để lưu!");
-    return;
-  }
-
   fs.mkdirSync(path.dirname(file), { recursive: true });
-
   const headers = Object.keys(data[0]);
-  const csvLines = [headers.join(",")];
-
+  const lines = [headers.join(",")];
   for (const row of data) {
-    csvLines.push(
-      headers
-        .map((h) => `"${String(row[h] || "").replace(/"/g, '""')}"`)
-        .join(",")
+    lines.push(
+      headers.map((h) => `"${String(row[h] || "").replace(/"/g, '""')}"`).join(",")
     );
   }
-
-  fs.writeFileSync(file, csvLines.join("\n"), "utf8");
-  console.log(`💾 Đã lưu ${data.length} dòng vào ${file}`);
+  fs.writeFileSync(file, lines.join("\n"), "utf8");
+  console.log(`💾 Lưu ${data.length} game vào ${file}`);
 }
 
 async function main() {
-  console.log("🚀 Bắt đầu quét TheGamesDB (NES)");
-  const browser = await launchBrowser();
-  const page = await browser.newPage();
+  console.log("🚀 Bắt đầu lấy dữ liệu NES...");
+  const list = await scrapeList(PLATFORM_ID);
+  const result = [];
 
-  const gameList = await scrapeList(page, PLATFORM_ID);
-  console.log(`🔢 Tổng cộng: ${gameList.length} game.`);
-
-  const results = [];
-
-  for (let i = 0; i < gameList.length; i++) {
-    const g = gameList[i];
-    console.log(`🎮 [${i + 1}/${gameList.length}] ${g.title}`);
-    try {
-      const detail = await scrapeGameDetail(page, g.id);
-      results.push(detail);
-    } catch (e) {
-      console.error(`❌ Lỗi khi lấy ${g.title}:`, e.message);
-    }
+  // chạy song song 5 game/lượt cho nhanh
+  const chunkSize = 5;
+  for (let i = 0; i < list.length; i += chunkSize) {
+    const slice = list.slice(i, i + chunkSize);
+    const details = await Promise.allSettled(
+      slice.map((g) =>
+        scrapeGame(g.id)
+          .then((d) => ({ ...d }))
+          .catch(() => null)
+      )
+    );
+    result.push(...details.filter((r) => r.value).map((r) => r.value));
+    console.log(`📦 ${result.length}/${list.length} game...`);
   }
 
-  await saveCSV(OUTPUT_FILE, results);
-  await browser.close();
-  console.log("✅ Hoàn tất.");
+  if (result.length > 0) await saveCSV(OUTPUT_FILE, result);
+  else console.warn("⚠️ Không lấy được game nào!");
 }
 
 main().catch((err) => {
-  console.error("🔥 Fatal error:", err);
+  console.error("🔥 Lỗi nghiêm trọng:", err);
   process.exit(1);
 });
