@@ -3,7 +3,7 @@ name: Scrape NES GamesDB
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * 0'
+    - cron: '0 3 * * 0'  # chạy mỗi Chủ Nhật 3:00 UTC
 
 jobs:
   scrape:
@@ -15,16 +15,22 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup latest Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 'latest'   # <── Dòng này sẽ luôn dùng Node.js mới nhất
 
       - name: Install dependencies
-        run: npm install cheerio node-fetch@2 --no-save
+        run: npm install cheerio@1 node-fetch@3 --no-save
 
       - name: Run scraper
         run: node scrape_gamesdb.js
+
+      - name: Upload data as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NES-data
+          path: data/*.csv
 
       - name: Commit results
         run: |
