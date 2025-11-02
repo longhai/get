@@ -4,7 +4,7 @@ import * as cheerio from "cheerio";
 
 const PLATFORMS = [7, 6]; // NES=7, Platform khác=6
 const OUTPUT_DIR = "data";
-const CONCURRENCY = 5; // Số game scrape song song mỗi batch
+const CONCURRENCY = 10; // Số game scrape song song mỗi batch
 
 // Lấy tên platform từ trang list_games.php
 async function getPlatformName(platformId) {
