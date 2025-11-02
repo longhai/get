@@ -11,16 +11,19 @@ async function scrapeGame(url) {
   const html = await res.text();
   const $ = cheerio.load(html);
 
+  const card = $("div.card-body");
+  
+  const platform = card.find("p:contains('Platform:') a").text().trim();
+  const region = card.find("p:contains('Region:')").text().replace("Region:", "").trim();
+  const country = card.find("p:contains('Country:')").text().replace("Country:", "").trim();
+  const developers = card.find("p:contains('Developer') a").map((_, el) => $(el).text().trim()).get().join("; ");
+  const publishers = card.find("p:contains('Publisher') a").map((_, el) => $(el).text().trim()).get().join("; ");
+  const releaseDate = card.find("p:contains('ReleaseDate:')").text().replace("ReleaseDate:", "").trim();
+  const players = card.find("p:contains('Players:')").text().replace("Players:", "").trim();
+  const coop = card.find("p:contains('Co-op:')").text().replace("Co-op:", "").trim();
   const title = $("h1").first().text().trim();
-  const overview = $("div.card-body p").first().text().trim();
-  const platform = $("div.card-body p:contains('Platform:')").text().replace("Platform:", "").trim();
-  const releaseDate = $("div.card-body p:contains('Release Date:')").text().replace("Release Date:", "").trim();
-  const region = $("div.card-body p:contains('Region:')").text().replace("Region:", "").trim();
-  const developers = $("div.card-body p:contains('Developer:')").text().replace("Developer:", "").trim();
-  const publishers = $("div.card-body p:contains('Publisher:')").text().replace("Publisher:", "").trim();
-  const imageUrl = $("div.card-body img").attr("src") || "";
 
-  return { title, overview, platform, releaseDate, region, developers, publishers, imageUrl };
+  return { title, platform, region, country, developers, publishers, releaseDate, players, coop };
 }
 
 async function main() {
@@ -30,16 +33,17 @@ async function main() {
 
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-    const csvHeader = "title,overview,platform,release_date,region,developers,publishers,image_url\n";
+    const csvHeader = "title,platform,region,country,developers,publishers,release_date,players,co_op\n";
     const csvData = [
       game.title,
-      game.overview,
       game.platform,
-      game.releaseDate,
       game.region,
+      game.country,
       game.developers,
       game.publishers,
-      game.imageUrl
+      game.releaseDate,
+      game.players,
+      game.coop
     ].map(x => `"${x.replace(/"/g, '""')}"`).join(",");
 
     fs.writeFileSync(OUTPUT_FILE, csvHeader + csvData);
