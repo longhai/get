@@ -1,9 +1,8 @@
 {
   "name": "gamesdb-scraper",
-  "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "puppeteer": "^23.0.0",
+    "node-fetch": "^2.6.9",
     "cheerio": "^1.0.0"
   }
 }
