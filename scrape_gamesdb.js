@@ -11,36 +11,39 @@ async function scrapeGame(url) {
   const html = await res.text();
   const $ = cheerio.load(html);
 
-  const card = $("div.card-body").first();
+  const cardBody = $("div.card-body").first();
   const header = $("div.card-header").first();
 
-  // Title
   const title = header.find("h1").text().trim();
 
-  // Also Known As - chỉ lấy phần trước dấu |
+  // Also Known As
   let alsoKnownAs = header.find("h6.text-muted").text().replace("Also know as:", "").trim();
   if (alsoKnownAs.includes("|")) alsoKnownAs = alsoKnownAs.split("|")[0].trim();
 
-  // Overview - class game-overview, gộp về 1 dòng
-  const overview = card.find("p.game-overview").text().replace(/\s+/g, ' ').trim();
+  let overview = "";
+  let esrb = "";
+  let genres = "";
 
-  // ESRB
-  const esrb = card.find("p").filter((_, el) => $(el).text().startsWith("ESRB Rating:"))
-                    .text().replace("ESRB Rating:", "").trim();
+  cardBody.find("p").each((_, el) => {
+    const p = $(el);
+    if (p.hasClass("game-overview")) {
+      overview = p.text().replace(/\s+/g, ' ').trim();
+    } else if (p.text().startsWith("ESRB Rating:")) {
+      esrb = p.text().replace("ESRB Rating:", "").trim();
+    } else if (p.text().startsWith("Genre(s):")) {
+      genres = p.text().replace("Genre(s):", "").trim();
+    }
+  });
 
-  // Genres
-  const genres = card.find("p").filter((_, el) => $(el).text().startsWith("Genre(s):"))
-                      .text().replace("Genre(s):", "").trim();
-
-  // Thông tin cũ
-  const platform = $("div.card-body p:contains('Platform:') a").text().trim();
-  const region = $("div.card-body p:contains('Region:')").text().replace("Region:", "").trim();
-  const country = $("div.card-body p:contains('Country:')").text().replace("Country:", "").trim();
-  const developers = $("div.card-body p:contains('Developer') a").map((_, el) => $(el).text().trim()).get().join("; ");
-  const publishers = $("div.card-body p:contains('Publisher') a").map((_, el) => $(el).text().trim()).get().join("; ");
-  const releaseDate = $("div.card-body p:contains('ReleaseDate:')").text().replace("ReleaseDate:", "").trim();
-  const players = $("div.card-body p:contains('Players:')").text().replace("Players:", "").trim();
-  const coop = $("div.card-body p:contains('Co-op:')").text().replace("Co-op:", "").trim();
+  // Các thông tin khác
+  const platform = cardBody.find("p:contains('Platform:') a").text().trim();
+  const region = cardBody.find("p:contains('Region:')").text().replace("Region:", "").trim();
+  const country = cardBody.find("p:contains('Country:')").text().replace("Country:", "").trim();
+  const developers = cardBody.find("p:contains('Developer') a").map((_, el) => $(el).text().trim()).get().join("; ");
+  const publishers = cardBody.find("p:contains('Publisher') a").map((_, el) => $(el).text().trim()).get().join("; ");
+  const releaseDate = cardBody.find("p:contains('ReleaseDate:')").text().replace("ReleaseDate:", "").trim();
+  const players = cardBody.find("p:contains('Players:')").text().replace("Players:", "").trim();
+  const coop = cardBody.find("p:contains('Co-op:')").text().replace("Co-op:", "").trim();
 
   return { title, alsoKnownAs, overview, esrb, genres, platform, region, country, developers, publishers, releaseDate, players, coop };
 }
