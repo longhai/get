@@ -2,11 +2,21 @@ import fs from "fs";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-const PLATFORM_ID = 7; // NES
+const PLATFORMS = [7, 6]; // NES=7, Platform khác=6
 const OUTPUT_DIR = "data";
-const PLATFORM_NAME = "Nintendo Entertainment System (NES)";
-const OUTPUT_FILE = `${OUTPUT_DIR}/${PLATFORM_NAME}.csv`;
 const CONCURRENCY = 5; // Số game scrape song song mỗi batch
+
+// Lấy tên platform từ trang list_games.php
+async function getPlatformName(platformId) {
+  const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}`;
+  const res = await fetch(url);
+  const html = await res.text();
+  const $ = cheerio.load(html);
+
+  // Tìm <h1> chứa tên platform
+  const name = $("h1").first().text().trim();
+  return name || `platform_${platformId}`;
+}
 
 // Lấy tất cả ID game của platform, xử lý pagination
 async function getAllGameIds(platformId) {
@@ -16,7 +26,7 @@ async function getAllGameIds(platformId) {
 
   while (hasNext) {
     const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${page}`;
-    console.log(`📥 Lấy game từ trang ${page}...`);
+    console.log(`📥 Lấy game từ platform ${platformId}, trang ${page}...`);
 
     const res = await fetch(url);
     const html = await res.text();
@@ -32,7 +42,7 @@ async function getAllGameIds(platformId) {
     page++;
   }
 
-  console.log(`✅ Tổng số game tìm thấy: ${gameIds.size}`);
+  console.log(`✅ Platform ${platformId}: tổng ${gameIds.size} game`);
   return [...gameIds];
 }
 
@@ -76,41 +86,50 @@ async function main() {
   try {
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-    // CSV header
-    const csvHeader = "title,also_known_as,release_date,region,country,developers,publishers,players,co_op,esrb,genres,overview\n";
-    fs.writeFileSync(OUTPUT_FILE, csvHeader);
+    for (const PLATFORM_ID of PLATFORMS) {
+      console.log(`\n=== Scraping platform ID ${PLATFORM_ID} ===`);
 
-    // Lấy tất cả game ID
-    const gameIds = await getAllGameIds(PLATFORM_ID);
+      // Lấy tên platform để đặt CSV
+      const PLATFORM_NAME = await getPlatformName(PLATFORM_ID);
+      const OUTPUT_FILE = `${OUTPUT_DIR}/${PLATFORM_NAME.replace(/[/\\?%*:|"<>]/g, "_")}.csv`;
 
-    // Scrape theo batch
-    for (let i = 0; i < gameIds.length; i += CONCURRENCY) {
-      const batch = gameIds.slice(i, i + CONCURRENCY);
-      const games = await Promise.all(batch.map(id => scrapeGame(id)));
+      // CSV header
+      const csvHeader = "title,also_known_as,release_date,region,country,developers,publishers,players,co_op,esrb,genres,overview\n";
+      fs.writeFileSync(OUTPUT_FILE, csvHeader);
 
-      for (const game of games) {
-        const csvData = [
-          game.title,
-          game.alsoKnownAs,
-          game.releaseDate,
-          game.region,
-          game.country,
-          game.developers,
-          game.publishers,
-          game.players,
-          game.coop,
-          game.esrb,
-          game.genres,
-          game.overview
-        ].map(x => `"${x.replace(/"/g, '""')}"`).join(",");
+      // Lấy tất cả game ID của platform
+      const gameIds = await getAllGameIds(PLATFORM_ID);
 
-        fs.appendFileSync(OUTPUT_FILE, csvData + "\n");
+      // Scrape theo batch
+      for (let i = 0; i < gameIds.length; i += CONCURRENCY) {
+        const batch = gameIds.slice(i, i + CONCURRENCY);
+        const games = await Promise.all(batch.map(id => scrapeGame(id)));
+
+        for (const game of games) {
+          const csvData = [
+            game.title,
+            game.alsoKnownAs,
+            game.releaseDate,
+            game.region,
+            game.country,
+            game.developers,
+            game.publishers,
+            game.players,
+            game.coop,
+            game.esrb,
+            game.genres,
+            game.overview
+          ].map(x => `"${x.replace(/"/g, '""')}"`).join(",");
+
+          fs.appendFileSync(OUTPUT_FILE, csvData + "\n");
+        }
+
+        console.log(`📦 Platform ${PLATFORM_NAME}: đã scrape batch ${i + 1} → ${i + batch.length}`);
       }
 
-      console.log(`📦 Đã scrape batch ${i + 1} → ${i + batch.length}`);
+      console.log(`✅ Hoàn tất platform ${PLATFORM_NAME}, CSV lưu tại ${OUTPUT_FILE}`);
     }
 
-    console.log(`✅ Hoàn tất, CSV lưu tại ${OUTPUT_FILE}`);
   } catch (err) {
     console.error("❌ Error:", err);
   }
