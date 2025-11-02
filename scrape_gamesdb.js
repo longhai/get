@@ -11,19 +11,25 @@ async function scrapeGame(url) {
   const html = await res.text();
   const $ = cheerio.load(html);
 
-  const card = $("div.card-body");
-  
-  const platform = card.find("p:contains('Platform:') a").text().trim();
-  const region = card.find("p:contains('Region:')").text().replace("Region:", "").trim();
-  const country = card.find("p:contains('Country:')").text().replace("Country:", "").trim();
-  const developers = card.find("p:contains('Developer') a").map((_, el) => $(el).text().trim()).get().join("; ");
-  const publishers = card.find("p:contains('Publisher') a").map((_, el) => $(el).text().trim()).get().join("; ");
-  const releaseDate = card.find("p:contains('ReleaseDate:')").text().replace("ReleaseDate:", "").trim();
-  const players = card.find("p:contains('Players:')").text().replace("Players:", "").trim();
-  const coop = card.find("p:contains('Co-op:')").text().replace("Co-op:", "").trim();
-  const title = $("h1").first().text().trim();
+  const card = $("div.card-body").first();
+  const header = $("div.card-header").first();
 
-  return { title, platform, region, country, developers, publishers, releaseDate, players, coop };
+  const title = header.find("h1").text().trim();
+  const alsoKnownAs = header.find("h6.text-muted").text().replace("Also know as:", "").trim();
+  const overview = card.find("p.game-overview").text().trim();
+  const esrb = card.find("p:contains('ESRB Rating:')").text().replace("ESRB Rating:", "").trim();
+  const genres = card.find("p:contains('Genre')").text().replace("Genre(s):", "").trim();
+
+  const platform = $("div.card-body p:contains('Platform:') a").text().trim();
+  const region = $("div.card-body p:contains('Region:')").text().replace("Region:", "").trim();
+  const country = $("div.card-body p:contains('Country:')").text().replace("Country:", "").trim();
+  const developers = $("div.card-body p:contains('Developer') a").map((_, el) => $(el).text().trim()).get().join("; ");
+  const publishers = $("div.card-body p:contains('Publisher') a").map((_, el) => $(el).text().trim()).get().join("; ");
+  const releaseDate = $("div.card-body p:contains('ReleaseDate:')").text().replace("ReleaseDate:", "").trim();
+  const players = $("div.card-body p:contains('Players:')").text().replace("Players:", "").trim();
+  const coop = $("div.card-body p:contains('Co-op:')").text().replace("Co-op:", "").trim();
+
+  return { title, alsoKnownAs, overview, esrb, genres, platform, region, country, developers, publishers, releaseDate, players, coop };
 }
 
 async function main() {
@@ -33,9 +39,13 @@ async function main() {
 
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-    const csvHeader = "title,platform,region,country,developers,publishers,release_date,players,co_op\n";
+    const csvHeader = "title,also_known_as,overview,esrb,genres,platform,region,country,developers,publishers,release_date,players,co_op\n";
     const csvData = [
       game.title,
+      game.alsoKnownAs,
+      game.overview,
+      game.esrb,
+      game.genres,
       game.platform,
       game.region,
       game.country,
