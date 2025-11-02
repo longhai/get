@@ -9,96 +9,101 @@ const OUTPUT_FILE = path.join(OUTPUT_DIR, "NES_games.csv");
 
 async function getHTML(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status} at ${url}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   return await res.text();
 }
 
-async function scrapeList(platformId) {
+async function scrapeList() {
   const games = [];
-  let pageNum = 1;
+  let page = 1;
 
   while (true) {
-    const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${pageNum}`;
-    console.log(`📄 Trang ${pageNum}...`);
+    const url = `https://thegamesdb.net/list_games.php?platform_id=${PLATFORM_ID}&page=${page}`;
+    console.log("📄 Fetch:", url);
     const html = await getHTML(url);
     const $ = cheerio.load(html);
+    const links = $(".game_list_item a").toArray();
 
-    const rows = $(".game_list_item a").toArray();
-    if (rows.length === 0) break;
+    if (links.length === 0) break;
 
-    for (const a of rows) {
+    for (const a of links) {
       const title = $(a).text().trim();
       const href = $(a).attr("href");
-      const match = href?.match(/id=(\d+)/);
-      if (match) games.push({ id: match[1], title });
+      const idMatch = href?.match(/id=(\d+)/);
+      if (idMatch) games.push({ id: idMatch[1], title });
     }
 
-    const hasNext = $(".pagination a:contains('Next')").length > 0;
-    if (!hasNext) break;
-    pageNum++;
+    const next = $(".pagination a:contains('Next')").length > 0;
+    if (!next) break;
+    page++;
   }
 
-  console.log(`✅ Tìm thấy ${games.length} game.`);
+  console.log(`✅ Tìm thấy ${games.length} game`);
   return games;
 }
 
 async function scrapeGame(id) {
-  const url = `https://thegamesdb.net/game.php?id=${id}`;
-  const html = await getHTML(url);
+  const html = await getHTML(`https://thegamesdb.net/game.php?id=${id}`);
   const $ = cheerio.load(html);
-
-  const getText = (label) =>
+  const info = (label) =>
     $(`b:contains("${label}")`).parent().text().replace(label, "").trim();
 
   return {
     Title: $("h1").first().text().trim(),
-    Developer: getText("Developer:"),
-    Publisher: getText("Publisher:"),
-    Genre: getText("Genres:"),
-    Players: getText("Players:"),
-    ReleaseDate: getText("Release Date:"),
+    Developer: info("Developer:"),
+    Publisher: info("Publisher:"),
+    Genre: info("Genres:"),
+    Players: info("Players:"),
+    ReleaseDate: info("Release Date:"),
     Overview: $(".game_overview").text().trim().replace(/\s+/g, " "),
   };
 }
 
-async function saveCSV(file, data) {
+async function saveCSV(file, rows) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const headers = Object.keys(data[0]);
-  const lines = [headers.join(",")];
-  for (const row of data) {
-    lines.push(
-      headers.map((h) => `"${String(row[h] || "").replace(/"/g, '""')}"`).join(",")
-    );
-  }
-  fs.writeFileSync(file, lines.join("\n"), "utf8");
-  console.log(`💾 Lưu ${data.length} game vào ${file}`);
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(","),
+    ...rows.map((r) =>
+      headers
+        .map((h) => `"${String(r[h] || "").replace(/"/g, '""')}"`)
+        .join(",")
+    ),
+  ].join("\n");
+  fs.writeFileSync(file, csv, "utf8");
+  console.log(`💾 Lưu ${rows.length} game vào ${file}`);
 }
 
 async function main() {
-  console.log("🚀 Bắt đầu lấy dữ liệu NES...");
-  const list = await scrapeList(PLATFORM_ID);
-  const result = [];
+  const list = await scrapeList();
+  const results = [];
 
-  // chạy song song 5 game/lượt cho nhanh
-  const chunkSize = 5;
-  for (let i = 0; i < list.length; i += chunkSize) {
-    const slice = list.slice(i, i + chunkSize);
-    const details = await Promise.allSettled(
-      slice.map((g) =>
-        scrapeGame(g.id)
-          .then((d) => ({ ...d }))
-          .catch(() => null)
-      )
+  const batchSize = 5;
+  for (let i = 0; i < list.length; i += batchSize) {
+    const batch = list.slice(i, i + batchSize);
+    const games = await Promise.all(
+      batch.map(async (g) => {
+        try {
+          const d = await scrapeGame(g.id);
+          console.log(`✔️ ${d.Title}`);
+          return d;
+        } catch {
+          console.warn(`⚠️ Bỏ qua ${g.title}`);
+          return null;
+        }
+      })
     );
-    result.push(...details.filter((r) => r.value).map((r) => r.value));
-    console.log(`📦 ${result.length}/${list.length} game...`);
+    results.push(...games.filter(Boolean));
   }
 
-  if (result.length > 0) await saveCSV(OUTPUT_FILE, result);
-  else console.warn("⚠️ Không lấy được game nào!");
+  if (results.length > 0) {
+    await saveCSV(OUTPUT_FILE, results);
+  } else {
+    console.warn("⚠️ Không lấy được dữ liệu nào!");
+  }
 }
 
-main().catch((err) => {
-  console.error("🔥 Lỗi nghiêm trọng:", err);
+main().catch((e) => {
+  console.error("🔥 Lỗi:", e);
   process.exit(1);
 });
