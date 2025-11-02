@@ -9,7 +9,6 @@ const OUTPUT_DIR = "data";
 const OUTPUT_FILE = path.join(OUTPUT_DIR, `NES_games.csv`);
 const CONCURRENCY = 10;
 
-// Helper
 async function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -17,38 +16,42 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// 🔹 Lấy danh sách tất cả game (có nhiều trang)
+// 🔹 Lấy danh sách game theo từng trang
 async function getGameList() {
   let page = 1;
   const games = [];
 
   while (true) {
     const url = `${BASE_URL}&page=${page}`;
-    log(`→ Fetch list page ${page}`);
+    log(`→ Fetch list page ${page}: ${url}`);
     const res = await fetch(url);
     if (!res.ok) break;
+
     const html = await res.text();
     const $ = cheerio.load(html);
 
-    const rows = $(".list_item");
-    if (!rows.length) break;
+    const cards = $("div.card.border-primary.mb-3");
+    if (!cards.length) break;
 
-    rows.each((_, el) => {
-      const title = $(el).find(".game_title a").text().trim();
-      const href = $(el).find(".game_title a").attr("href");
-      if (title && href) {
-        const gameUrl = new URL(href, "https://thegamesdb.net/").href;
-        games.push({ title, url: gameUrl });
+    cards.each((_, el) => {
+      const title = $(el).find(".card-footer p:first-child").text().trim();
+      const href = $(el).find(".card-footer p:first-child a").attr("href");
+      if (href && title) {
+        games.push({
+          title,
+          url: new URL(href, "https://thegamesdb.net/").href,
+        });
       }
     });
 
-    const hasNext = $(".pagination a:contains('Next')").length > 0;
+    const hasNext = $("a.page-link:contains('Next')").length > 0;
     if (!hasNext) break;
 
     page++;
-    await delay(800);
+    await delay(1000);
   }
 
+  log(`✅ Tổng số game lấy được: ${games.length}`);
   return games;
 }
 
@@ -60,17 +63,23 @@ async function getGameDetails(game) {
     const html = await res.text();
     const $ = cheerio.load(html);
 
+    const findText = (label) => {
+      const el = $(`p:contains('${label}')`).first();
+      if (!el.length) return "";
+      return el.text().replace(label, "").trim();
+    };
+
     const data = {
       Title: $("h1").first().text().trim() || game.title,
-      Platform: $("p:contains('Platform:') a").text().trim(),
-      Region: $("p:contains('Region:')").text().replace("Region:", "").trim(),
-      Country: $("p:contains('Country:')").text().replace("Country:", "").trim(),
-      Developer: $("p:contains('Developer') a").map((_, a) => $(a).text().trim()).get().join(", "),
-      Publisher: $("p:contains('Publisher') a").map((_, a) => $(a).text().trim()).get().join(", "),
-      ReleaseDate: $("p:contains('ReleaseDate:')").text().replace("ReleaseDate:", "").trim(),
-      Players: $("p:contains('Players:')").text().replace("Players:", "").trim(),
-      Coop: $("p:contains('Co-op:')").text().replace("Co-op:", "").trim(),
-      Genre: $("p:contains('Genre')").text().replace("Genre(s):", "").trim(),
+      Platform: findText("Platform:"),
+      Region: findText("Region:"),
+      Country: findText("Country:"),
+      Developer: findText("Developer:"),
+      Publisher: findText("Publisher:"),
+      Players: findText("Players:"),
+      Coop: findText("Co-op:"),
+      Genre: findText("Genre(s):"),
+      ReleaseDate: findText("Release Date:"),
       Overview: $(".game-overview").text().trim(),
       URL: game.url,
     };
@@ -82,19 +91,21 @@ async function getGameDetails(game) {
   }
 }
 
-// 🔹 Chuyển dữ liệu sang CSV
+// 🔹 Chuyển sang CSV
 function toCSV(data) {
   if (!data.length) return "";
   const headers = Object.keys(data[0]);
   const lines = [headers.join(",")];
   for (const row of data) {
-    const values = headers.map(h => `"${String(row[h] || "").replace(/"/g, '""').replace(/\r?\n|\r/g, " ")}"`);
+    const values = headers.map((h) =>
+      `"${String(row[h] || "").replace(/"/g, '""').replace(/\r?\n|\r/g, " ")}"`
+    );
     lines.push(values.join(","));
   }
   return lines.join("\n");
 }
 
-// 🔹 Xử lý song song
+// 🔹 Chạy song song
 async function processQueue(items, limit, fn) {
   const results = [];
   let index = 0;
@@ -104,7 +115,7 @@ async function processQueue(items, limit, fn) {
       const i = index++;
       const r = await fn(items[i], i);
       results[i] = r;
-      await delay(300);
+      await delay(200);
     }
   }
 
@@ -117,17 +128,12 @@ async function processQueue(items, limit, fn) {
 async function main() {
   log("🔧 Bắt đầu scraper...");
 
-  if (!fs.existsSync(OUTPUT_DIR)) {
-    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    log(`📂 Tạo thư mục ${OUTPUT_DIR}`);
-  }
+  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
   const games = await getGameList();
-  log(`🔍 Tổng số game tìm thấy: ${games.length}`);
-
   if (!games.length) {
-    log("⚠️ Không có game nào — có thể selector trang thay đổi.");
-    fs.writeFileSync(OUTPUT_FILE, "No data found\n");
+    log("⚠️ Không tìm thấy game nào (có thể HTML thay đổi).");
+    fs.writeFileSync(OUTPUT_FILE, "No data\n");
     return;
   }
 
@@ -137,9 +143,14 @@ async function main() {
   });
 
   const valid = results.filter(Boolean);
-  const csv = toCSV(valid);
+  if (!valid.length) {
+    log("⚠️ Không có dữ liệu hợp lệ nào để ghi CSV.");
+    fs.writeFileSync(OUTPUT_FILE, "No valid data\n");
+    return;
+  }
 
-  fs.writeFileSync(OUTPUT_FILE, csv || "No data\n");
+  const csv = toCSV(valid);
+  fs.writeFileSync(OUTPUT_FILE, csv);
   log(`✅ Đã lưu ${valid.length} game vào ${OUTPUT_FILE}`);
 }
 
