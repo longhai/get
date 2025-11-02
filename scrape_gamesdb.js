@@ -1,63 +1,61 @@
 import fs from "fs";
 import path from "path";
-import fetch from "node-fetch";
+import puppeteer from "puppeteer";
 import * as cheerio from "cheerio";
 
 const PLATFORM_ID = 7; // NES
 const BASE_URL = `https://thegamesdb.net/list_games.php?platform_id=${PLATFORM_ID}`;
 const OUTPUT_DIR = "data";
 const OUTPUT_FILE = path.join(OUTPUT_DIR, `NES_games.csv`);
-const CONCURRENCY = 5;
 
-async function delay(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }
-function log(msg) {
-  console.log(`[${new Date().toISOString()}] ${msg}`);
+function log(m) {
+  console.log(`[${new Date().toISOString()}] ${m}`);
 }
 
-// 🟩 Lấy danh sách tất cả game (dò tự động tất cả trang)
-async function getGameList() {
-  let page = 1;
+function toCSV(data) {
+  if (!data.length) return "";
+  const headers = Object.keys(data[0]);
+  const rows = data.map(d =>
+    headers.map(h => `"${String(d[h] || "").replace(/"/g, '""')}"`).join(",")
+  );
+  return [headers.join(","), ...rows].join("\n");
+}
+
+async function scrapeListPage(page, pageNum) {
+  const url = `${BASE_URL}&page=${pageNum}`;
+  await page.goto(url, { waitUntil: "networkidle2" });
+  await delay(1000);
+
+  const html = await page.content();
+  const $ = cheerio.load(html);
+  const cards = $(".card.border-primary");
   const games = [];
 
-  while (true) {
-    const url = `${BASE_URL}&page=${page}`;
-    log(`→ Fetch list page ${page}: ${url}`);
-    const res = await fetch(url);
-    if (!res.ok) break;
+  cards.each((_, el) => {
+    const title = $(el).find(".card-header a").text().trim();
+    const href = $(el).find(".card-header a").attr("href");
+    if (title && href) {
+      games.push({
+        title,
+        url: new URL(href, "https://thegamesdb.net/").href,
+      });
+    }
+  });
 
-    const html = await res.text();
-    const $ = cheerio.load(html);
+  const hasNext =
+    $(".page-link").filter((_, el) => $(el).text().trim() === "Next").length > 0;
 
-    const cards = $(".card.border-primary");
-    if (!cards.length) break;
-
-    cards.each((_, el) => {
-      const title = $(el).find(".card-header a").text().trim();
-      const href = $(el).find(".card-header a").attr("href");
-      if (title && href) {
-        const gameUrl = new URL(href, "https://thegamesdb.net/").href;
-        games.push({ title, url: gameUrl });
-      }
-    });
-
-    const hasNext = $(".page-link").filter((_, el) => $(el).text().trim() === "Next").length > 0;
-    if (!hasNext) break;
-
-    page++;
-    await delay(1000);
-  }
-
-  return games;
+  return { games, hasNext };
 }
 
-// 🟦 Lấy chi tiết từng game
-async function getGameDetails(game) {
+async function scrapeGameDetails(page, game) {
   try {
-    const res = await fetch(game.url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const html = await res.text();
+    await page.goto(game.url, { waitUntil: "networkidle2" });
+    await delay(500);
+    const html = await page.content();
     const $ = cheerio.load(html);
 
     const getText = (label) =>
@@ -78,79 +76,46 @@ async function getGameDetails(game) {
       URL: game.url,
     };
 
-    // Nếu không có Platform thì coi như fail
-    if (!data.Platform) {
-      log(`⚠️ ${game.title} không có dữ liệu chi tiết.`);
-      return null;
-    }
-
     return data;
-  } catch (err) {
-    log(`❌ Error fetching ${game.title}: ${err.message}`);
+  } catch (e) {
+    log(`❌ ${game.title} error: ${e.message}`);
     return null;
   }
 }
 
-// 🟨 Chuyển dữ liệu sang CSV
-function toCSV(data) {
-  if (!data.length) return "";
-  const headers = Object.keys(data[0]);
-  const lines = [headers.join(",")];
-  for (const row of data) {
-    const vals = headers.map((h) => `"${String(row[h] || "").replace(/"/g, '""')}"`);
-    lines.push(vals.join(","));
-  }
-  return lines.join("\n");
-}
-
-// 🟧 Xử lý song song (hạn chế requests)
-async function processQueue(items, limit, fn) {
-  const results = [];
-  let index = 0;
-
-  async function worker() {
-    while (index < items.length) {
-      const i = index++;
-      const r = await fn(items[i], i);
-      results[i] = r;
-      await delay(300);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
-// 🟥 Main
 async function main() {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
+  const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
+
   log("🔧 Bắt đầu quét danh sách game NES...");
-  const games = await getGameList();
-  log(`📜 Tổng cộng ${games.length} game được tìm thấy.`);
+  let allGames = [];
+  let pageNum = 1;
 
-  if (!games.length) {
-    fs.writeFileSync(OUTPUT_FILE, "No games found\n");
-    log("⚠️ Không có game nào được lấy.");
-    return;
+  while (true) {
+    const { games, hasNext } = await scrapeListPage(page, pageNum);
+    allGames.push(...games);
+    log(`Trang ${pageNum}: lấy được ${games.length} game`);
+    if (!hasNext) break;
+    pageNum++;
   }
 
-  const results = await processQueue(games, CONCURRENCY, async (g, i) => {
-    log(`→ [${i + 1}/${games.length}] ${g.title}`);
-    return await getGameDetails(g);
-  });
+  log(`📜 Tổng cộng ${allGames.length} game.`);
 
-  const valid = results.filter(Boolean);
-  if (!valid.length) {
-    fs.writeFileSync(OUTPUT_FILE, "No data parsed\n");
-    log("⚠️ Không có dữ liệu hợp lệ được trích xuất.");
-    return;
+  const detailed = [];
+  for (let i = 0; i < allGames.length; i++) {
+    log(`→ [${i + 1}/${allGames.length}] ${allGames[i].title}`);
+    const info = await scrapeGameDetails(page, allGames[i]);
+    if (info) detailed.push(info);
+    await delay(400);
   }
 
-  const csv = toCSV(valid);
+  const csv = toCSV(detailed);
   fs.writeFileSync(OUTPUT_FILE, csv);
-  log(`✅ Đã lưu ${valid.length} game vào ${OUTPUT_FILE}`);
+  log(`✅ Đã lưu ${detailed.length} game vào ${OUTPUT_FILE}`);
+
+  await browser.close();
 }
 
 main().catch((err) => {
