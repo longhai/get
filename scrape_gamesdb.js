@@ -1,4 +1,3 @@
-// ======== scrape_gamesdb.js (song song giới hạn) ========
 import fs from "fs";
 import path from "path";
 import fetch from "node-fetch";
@@ -8,16 +7,16 @@ const PLATFORM_ID = 7; // NES
 const BASE_URL = `https://thegamesdb.net/list_games.php?platform_id=${PLATFORM_ID}`;
 const OUTPUT_DIR = "data";
 const OUTPUT_FILE = path.join(OUTPUT_DIR, `NES_games.csv`);
-const CONCURRENCY = 10; // số request đồng thời
+const CONCURRENCY = 10;
 
 async function delay(ms) {
-  return new Promise(r => setTimeout(r, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// Lấy danh sách game
+// 🔹 Lấy danh sách game từ các trang list
 async function getGameList() {
   let page = 1;
   const games = [];
@@ -51,7 +50,7 @@ async function getGameList() {
   return games;
 }
 
-// Lấy chi tiết từng game
+// 🔹 Lấy chi tiết từng game
 async function getGameDetails(game) {
   try {
     const res = await fetch(game.url);
@@ -63,36 +62,51 @@ async function getGameDetails(game) {
     const html = await res.text();
     const $ = cheerio.load(html);
 
-    return {
+    const cardBody = $(".card-body");
+    if (!cardBody.length) return null;
+
+    const info = {
       Title: $("h1").first().text().trim(),
-      Platform: $(".gameinfo_item:contains('Platform:') a").text().trim() || "Unknown",
-      Players: $(".gameinfo_item:contains('Players:')").text().replace("Players:", "").trim() || "",
-      Developer: $(".gameinfo_item:contains('Developer:') a").text().trim() || "",
-      Publisher: $(".gameinfo_item:contains('Publisher:') a").text().trim() || "",
-      Genre: $(".gameinfo_item:contains('Genre:') a").map((_, a) => $(a).text().trim()).get().join(", "),
-      ReleaseDate: $(".gameinfo_item:contains('Release Date:')").text().replace("Release Date:", "").trim() || "",
-      Overview: $(".gameinfo_item:contains('Overview:')").text().replace("Overview:", "").trim() || ""
+      Platform: $("p:contains('Platform:') a").text().trim(),
+      Region: $("p:contains('Region:')").text().replace("Region:", "").trim(),
+      Country: $("p:contains('Country:')").text().replace("Country:", "").trim(),
+      Developer: $("p:contains('Developer') a").map((_, a) => $(a).text().trim()).get().join(", "),
+      Publisher: $("p:contains('Publisher') a").map((_, a) => $(a).text().trim()).get().join(", "),
+      ReleaseDate: $("p:contains('ReleaseDate:')").text().replace("ReleaseDate:", "").trim(),
+      Players: $("p:contains('Players:')").text().replace("Players:", "").trim(),
+      Coop: $("p:contains('Co-op:')").text().replace("Co-op:", "").trim(),
+      Genre: $("p:contains('Genre')").text().replace("Genre(s):", "").trim(),
+      Overview: $(".game-overview").text().trim(),
+      URL: game.url,
     };
+
+    return info;
   } catch (e) {
     log(`❌ Error parsing ${game.title}: ${e.message}`);
     return null;
   }
 }
 
-// Xuất ra CSV
+// 🔹 Chuyển dữ liệu thành CSV
 function toCSV(data) {
   if (!data.length) return "";
   const headers = Object.keys(data[0]);
   const lines = [headers.join(",")];
   for (const row of data) {
     lines.push(
-      headers.map(h => `"${String(row[h] || "").replace(/"/g, '""').replace(/\r?\n|\r/g, " ")}"`).join(",")
+      headers
+        .map((h) =>
+          `"${String(row[h] || "")
+            .replace(/"/g, '""')
+            .replace(/\r?\n|\r/g, " ")}"`
+        )
+        .join(",")
     );
   }
   return lines.join("\n");
 }
 
-// Hàng đợi song song giới hạn
+// 🔹 Chạy song song có giới hạn
 async function processQueue(items, limit, fn) {
   const results = [];
   let index = 0;
@@ -104,14 +118,18 @@ async function processQueue(items, limit, fn) {
     results[i] = result;
     await next();
   }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => next());
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+    next()
+  );
   await Promise.all(workers);
   return results;
 }
 
-// Chạy chính
+// 🔹 Hàm chính
 async function main() {
-  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  if (!fs.existsSync(OUTPUT_DIR))
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
   const games = await getGameList();
   log(`🔍 Tổng số game: ${games.length}`);
   if (!games.length) return;
@@ -119,17 +137,23 @@ async function main() {
   const results = await processQueue(games, CONCURRENCY, async (g, i) => {
     log(`→ [${i + 1}/${games.length}] ${g.title}`);
     const info = await getGameDetails(g);
-    await delay(300); // nhỏ để tránh spam
+    await delay(300);
     return info;
   });
 
   const valid = results.filter(Boolean);
-  const csv = toCSV(valid);
-  fs.writeFileSync(OUTPUT_FILE, csv);
-  log(`✅ Đã lưu ${valid.length} game vào ${OUTPUT_FILE}`);
+  console.log("Ví dụ dữ liệu:", valid.slice(0, 2));
+
+  if (valid.length) {
+    const csv = toCSV(valid);
+    fs.writeFileSync(OUTPUT_FILE, csv);
+    log(`✅ Đã lưu ${valid.length} game vào ${OUTPUT_FILE}`);
+  } else {
+    log("⚠️ Không có dữ liệu nào được lưu, có thể lỗi selector.");
+  }
 }
 
-main().catch(e => {
+main().catch((e) => {
   console.error("Fatal error:", e);
   process.exit(1);
 });
