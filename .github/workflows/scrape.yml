@@ -12,25 +12,28 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: latest
 
+      - name: Create data folder
+        run: mkdir -p data
+
       - name: Install dependencies
-        run: |
-          npm install cheerio node-fetch@2 --no-save
+        run: npm install
 
       - name: Run scraper
         run: node scrape_gamesdb.js
+
+      - name: Show CSV info
+        run: ls -l data && head -n 5 data/NES_games.csv || echo "CSV missing"
 
       - name: Commit results
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "actions@github.com"
-          git add data || echo "No data folder"
-          git commit -m "Update scraped data $(date '+%Y-%m-%d')" || echo "No changes"
+          git add data/NES_games.csv || echo "No CSV"
+          git commit -m "Update scraped data" || echo "No changes"
           git push
