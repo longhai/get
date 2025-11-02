@@ -3,30 +3,40 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const PLATFORM_ID = 7; // NES
-const LIST_URL = `https://thegamesdb.net/list_games.php?platform_id=${PLATFORM_ID}`;
 const OUTPUT_DIR = "data";
 const PLATFORM_NAME = "Nintendo Entertainment System (NES)";
 const OUTPUT_FILE = `${OUTPUT_DIR}/${PLATFORM_NAME}.csv`;
+const CONCURRENCY = 5; // Số game scrape song song mỗi batch
 
-// Hàm lấy danh sách game với ID
-async function getGameIds(url) {
-  const res = await fetch(url);
-  const html = await res.text();
-  const $ = cheerio.load(html);
+// Lấy tất cả ID game của platform, xử lý pagination
+async function getAllGameIds(platformId) {
+  const gameIds = new Set();
+  let page = 1;
+  let hasNext = true;
 
-  // Lấy tất cả link game, ví dụ: game.php?id=29289
-  const gameIds = [];
-  $("a[href*='game.php?id=']").each((_, el) => {
-    const href = $(el).attr("href");
-    const match = href.match(/game\.php\?id=(\d+)/);
-    if (match) gameIds.push(match[1]);
-  });
+  while (hasNext) {
+    const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${page}`;
+    console.log(`📥 Lấy game từ trang ${page}...`);
 
-  // Loại bỏ trùng lặp
-  return [...new Set(gameIds)];
+    const res = await fetch(url);
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    $("a[href*='game.php?id=']").each((_, el) => {
+      const href = $(el).attr("href");
+      const match = href.match(/game\.php\?id=(\d+)/);
+      if (match) gameIds.add(match[1]);
+    });
+
+    hasNext = $("a:contains('Next')").length > 0;
+    page++;
+  }
+
+  console.log(`✅ Tổng số game tìm thấy: ${gameIds.size}`);
+  return [...gameIds];
 }
 
-// Hàm scrape chi tiết 1 game
+// Scrape chi tiết 1 game
 async function scrapeGame(id) {
   const url = `https://thegamesdb.net/game.php?id=${id}`;
   const res = await fetch(url);
@@ -66,15 +76,14 @@ async function main() {
   try {
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-    console.log("📥 Lấy danh sách game...");
-    const gameIds = await getGameIds(LIST_URL);
-    console.log(`✅ Tìm thấy ${gameIds.length} game.`);
-
+    // CSV header
     const csvHeader = "title,also_known_as,release_date,region,country,developers,publishers,players,co_op,esrb,genres,overview\n";
     fs.writeFileSync(OUTPUT_FILE, csvHeader);
 
-    // Scrape nhiều game song song (limit 5 cùng lúc để tránh bị block)
-    const CONCURRENCY = 5;
+    // Lấy tất cả game ID
+    const gameIds = await getAllGameIds(PLATFORM_ID);
+
+    // Scrape theo batch
     for (let i = 0; i < gameIds.length; i += CONCURRENCY) {
       const batch = gameIds.slice(i, i + CONCURRENCY);
       const games = await Promise.all(batch.map(id => scrapeGame(id)));
@@ -101,7 +110,7 @@ async function main() {
       console.log(`📦 Đã scrape batch ${i + 1} → ${i + batch.length}`);
     }
 
-    console.log(`✅ Hoàn tất, lưu CSV tại ${OUTPUT_FILE}`);
+    console.log(`✅ Hoàn tất, CSV lưu tại ${OUTPUT_FILE}`);
   } catch (err) {
     console.error("❌ Error:", err);
   }
