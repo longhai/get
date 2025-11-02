@@ -31,7 +31,7 @@ async function scrapePlatform(platformId) {
       const idMatch = $(el).find("a").attr("href")?.match(/id=(\d+)/);
       const id = idMatch ? idMatch[1] : "";
 
-      results.push({ id, title, region, date, platform, img });
+      results.push({title, region, date, platform });
     });
 
     const hasNext = $("a.page-link:contains('Next')").length > 0;
