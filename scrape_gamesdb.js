@@ -14,12 +14,25 @@ async function scrapeGame(url) {
   const card = $("div.card-body").first();
   const header = $("div.card-header").first();
 
+  // Title
   const title = header.find("h1").text().trim();
-  const alsoKnownAs = header.find("h6.text-muted").text().replace("Also know as:", "").trim();
-  const overview = card.find("p.game-overview").text().trim();
-  const esrb = card.find("p:contains('ESRB Rating:')").text().replace("ESRB Rating:", "").trim();
-  const genres = card.find("p:contains('Genre')").text().replace("Genre(s):", "").trim();
 
+  // Also Known As - chỉ lấy phần trước dấu |
+  let alsoKnownAs = header.find("h6.text-muted").text().replace("Also know as:", "").trim();
+  if (alsoKnownAs.includes("|")) alsoKnownAs = alsoKnownAs.split("|")[0].trim();
+
+  // Overview - loại bỏ dòng mới thừa
+  const overview = card.find("p.game-overview").text().replace(/\s+/g, ' ').trim();
+
+  // ESRB
+  const esrb = card.find("p").filter((_, el) => $(el).text().includes("ESRB Rating:"))
+                    .text().replace("ESRB Rating:", "").trim();
+
+  // Genres
+  const genres = card.find("p").filter((_, el) => $(el).text().includes("Genre"))
+                      .text().replace("Genre(s):", "").trim();
+
+  // Thông tin cũ
   const platform = $("div.card-body p:contains('Platform:') a").text().trim();
   const region = $("div.card-body p:contains('Region:')").text().replace("Region:", "").trim();
   const country = $("div.card-body p:contains('Country:')").text().replace("Country:", "").trim();
