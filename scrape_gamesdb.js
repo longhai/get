@@ -1,6 +1,9 @@
+import fs from "fs";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
+const OUTPUT_DIR = "data";
+const OUTPUT_FILE = `${OUTPUT_DIR}/nes_game_detail.csv`;
 const URL = "https://thegamesdb.net/game.php?id=29289";
 
 async function scrapeGame(url) {
@@ -20,11 +23,30 @@ async function scrapeGame(url) {
   return { title, overview, platform, releaseDate, region, developers, publishers, imageUrl };
 }
 
-(async () => {
+async function main() {
   try {
+    console.log("📥 Scraping game detail...");
     const game = await scrapeGame(URL);
-    console.log(game);
+
+    if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+
+    const csvHeader = "title,overview,platform,release_date,region,developers,publishers,image_url\n";
+    const csvData = [
+      game.title,
+      game.overview,
+      game.platform,
+      game.releaseDate,
+      game.region,
+      game.developers,
+      game.publishers,
+      game.imageUrl
+    ].map(x => `"${x.replace(/"/g, '""')}"`).join(",");
+
+    fs.writeFileSync(OUTPUT_FILE, csvHeader + csvData);
+    console.log(`✅ Saved game detail to ${OUTPUT_FILE}`);
   } catch (err) {
-    console.error("Error scraping game:", err);
+    console.error("❌ Error:", err);
   }
-})();
+}
+
+main();
