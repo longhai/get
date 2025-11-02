@@ -21,35 +21,39 @@ async function launchBrowser() {
 }
 
 async function fetchHTML(page, url) {
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
   return await page.content();
 }
 
 async function scrapeList(page, platformId) {
-  let games = [];
-  let currentPage = 1;
+  const games = [];
+  let pageNum = 1;
 
   while (true) {
-    const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${currentPage}`;
-    console.log(`→ Fetch list page ${currentPage}: ${url}`);
+    const url = `https://thegamesdb.net/list_games.php?platform_id=${platformId}&page=${pageNum}`;
+    console.log(`📄 Đang lấy danh sách trang ${pageNum}...`);
     const html = await fetchHTML(page, url);
     const $ = cheerio.load(html);
 
     const rows = $(".game_list_item a").toArray();
-    if (rows.length === 0) break;
+    if (rows.length === 0) {
+      console.log("⚠️ Hết trang hoặc không có dữ liệu.");
+      break;
+    }
 
     for (const a of rows) {
-      const href = $(a).attr("href");
       const title = $(a).text().trim();
+      const href = $(a).attr("href");
       if (href && title) {
-        const match = href.match(/id=(\d+)/);
-        if (match) games.push({ id: match[1], title });
+        const idMatch = href.match(/id=(\d+)/);
+        if (idMatch) games.push({ id: idMatch[1], title });
       }
     }
 
     const next = $(".pagination a:contains('Next')").length > 0;
+    console.log(`✅ Trang ${pageNum}: ${rows.length} game`);
     if (!next) break;
-    currentPage++;
+    pageNum++;
   }
 
   return games;
@@ -65,7 +69,7 @@ async function scrapeGameDetail(page, id) {
       .parent()
       .text()
       .replace(label, "")
-      .trim() || "";
+      .trim();
 
   return {
     Title: $("h1").first().text().trim(),
@@ -78,49 +82,56 @@ async function scrapeGameDetail(page, id) {
   };
 }
 
-async function saveCSV(filename, data) {
-  if (data.length === 0) return;
-  const headers = Object.keys(data[0]);
-  const rows = [headers.join(",")];
-
-  for (const row of data) {
-    const values = headers.map((h) =>
-      `"${String(row[h] || "").replace(/"/g, '""')}"`
-    );
-    rows.push(values.join(","));
+async function saveCSV(file, data) {
+  if (!data.length) {
+    console.warn("⚠️ Không có dữ liệu để lưu!");
+    return;
   }
 
-  fs.mkdirSync(path.dirname(filename), { recursive: true });
-  fs.writeFileSync(filename, rows.join("\n"), "utf8");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+
+  const headers = Object.keys(data[0]);
+  const csvLines = [headers.join(",")];
+
+  for (const row of data) {
+    csvLines.push(
+      headers
+        .map((h) => `"${String(row[h] || "").replace(/"/g, '""')}"`)
+        .join(",")
+    );
+  }
+
+  fs.writeFileSync(file, csvLines.join("\n"), "utf8");
+  console.log(`💾 Đã lưu ${data.length} dòng vào ${file}`);
 }
 
 async function main() {
-  console.log("🚀 Bắt đầu scrape NES GamesDB...");
+  console.log("🚀 Bắt đầu quét TheGamesDB (NES)");
   const browser = await launchBrowser();
   const page = await browser.newPage();
 
   const gameList = await scrapeList(page, PLATFORM_ID);
-  console.log(`📄 Tìm thấy ${gameList.length} game.`);
+  console.log(`🔢 Tổng cộng: ${gameList.length} game.`);
 
-  let results = [];
+  const results = [];
 
-  for (const [i, g] of gameList.entries()) {
+  for (let i = 0; i < gameList.length; i++) {
+    const g = gameList[i];
+    console.log(`🎮 [${i + 1}/${gameList.length}] ${g.title}`);
     try {
-      console.log(`🔍 [${i + 1}/${gameList.length}] ${g.title}`);
       const detail = await scrapeGameDetail(page, g.id);
       results.push(detail);
-    } catch (err) {
-      console.error(`❌ Lỗi lấy game ${g.title}:`, err.message);
+    } catch (e) {
+      console.error(`❌ Lỗi khi lấy ${g.title}:`, e.message);
     }
   }
 
   await saveCSV(OUTPUT_FILE, results);
-  console.log(`✅ Đã lưu ${results.length} game vào ${OUTPUT_FILE}`);
-
   await browser.close();
+  console.log("✅ Hoàn tất.");
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  console.error("🔥 Fatal error:", err);
   process.exit(1);
 });
