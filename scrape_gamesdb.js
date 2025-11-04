@@ -11,7 +11,6 @@ const CONFIG = {
   delayBetweenDetails: 100,
   maxRetries: 3,
   timeout: 30000,
-  maxPages: 3,
   concurrency: 5
 };
 
@@ -43,7 +42,7 @@ class GameScraper {
     console.log(`📥 Scraping platform ${platformId}...`);
     let page = 1, gameIds = [], platformName = "";
 
-    while (page <= CONFIG.maxPages) {
+    while (true) {
       const url = `${BASE_URL}?platform_id=${platformId}&page=${page}`;
       console.log(`🔹 Page ${page}: ${url}`);
       
