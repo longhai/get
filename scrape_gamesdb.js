@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const PLATFORM_IDS = [6, 7]; // Multiple platforms
+const PLATFORM_IDS = [6, 7];
 const OUTPUT_DIR = "data";
 
 const CONFIG = {
@@ -11,12 +11,12 @@ const CONFIG = {
   delayBetweenDetails: 100,
   maxRetries: 3,
   timeout: 30000,
-  concurrency: 5
+  concurrency: 10
 };
 
 class GameScraper {
   constructor() {
-    this.stats = { total: 0, success: 0, errors: 0 };
+    this.stats = { total: 0, success: 0, errors: 0, skipped: 0 };
   }
 
   async fetchWithRetry(url, retries = CONFIG.maxRetries) {
@@ -35,6 +35,35 @@ class GameScraper {
         if (attempt === retries) throw error;
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
+    }
+  }
+
+  // Đọc existing games từ CSV
+  readExistingGames(platformName) {
+    const cleanName = platformName.replace(/[<>:"/\\|?*]/g, '').trim();
+    const filePath = `${OUTPUT_DIR}/${cleanName}.csv`;
+    
+    if (!fs.existsSync(filePath)) {
+      return new Set();
+    }
+
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n').slice(1); // Bỏ header
+      const existingTitles = new Set();
+      
+      lines.forEach(line => {
+        if (line.trim()) {
+          const title = line.split(',')[0]?.replace(/"/g, '');
+          if (title) existingTitles.add(title.toLowerCase());
+        }
+      });
+      
+      console.log(`📚 Found ${existingTitles.size} existing games`);
+      return existingTitles;
+    } catch (error) {
+      console.log('❌ Error reading existing file, starting fresh');
+      return new Set();
     }
   }
 
@@ -90,7 +119,7 @@ class GameScraper {
       const getText = (selector, replaceText = '') => 
         $(selector).text().replace(replaceText, '').trim();
 
-      return {
+      const gameData = {
         title: $("h1").first().text().trim(),
         alternate_titles: getText("h6.text-muted", 'Also know as:'),
         region: getText(leftCard.find("p:contains('Region:')"), 'Region:'),
@@ -104,6 +133,13 @@ class GameScraper {
         esrb_rating: getText(mainCard.find("p:contains('ESRB Rating:')"), 'ESRB Rating:'),
         description: mainCard.find(".game-overview").text().trim()
       };
+
+      // Validate data - nếu thiếu title thì coi như lỗi
+      if (!gameData.title) {
+        throw new Error('Missing title');
+      }
+
+      return gameData;
     } catch (error) {
       console.error(`❌ Game ${gameId}:`, error.message);
       return { error: error.message };
@@ -114,6 +150,9 @@ class GameScraper {
     const { gameIds, platformName } = await this.scrapeGameIds(platformId);
     if (gameIds.length === 0) return null;
 
+    // Đọc existing games để skip những cái đã có
+    const existingGames = this.readExistingGames(platformName);
+    
     console.log(`⚡ Scraping ${gameIds.length} games (${CONFIG.concurrency} concurrent)...`);
     
     const batches = [];
@@ -121,62 +160,104 @@ class GameScraper {
       batches.push(gameIds.slice(i, i + CONFIG.concurrency));
     }
 
-    const allGames = [];
+    const newGames = [];
     for (let i = 0; i < batches.length; i++) {
       const batchResults = await Promise.all(
         batches[i].map(gameId => 
           this.scrapeGameDetails(gameId)
-            .then(result => (this.stats.success++, result))
-            .catch(error => (this.stats.errors++, { error: error.message }))
+            .then(result => {
+              if (result.error) {
+                this.stats.errors++;
+                return null;
+              }
+              
+              // Check if game already exists
+              if (existingGames.has(result.title.toLowerCase())) {
+                this.stats.skipped++;
+                console.log(`⏭️ Skipped: ${result.title}`);
+                return null;
+              }
+              
+              this.stats.success++;
+              return result;
+            })
+            .catch(error => {
+              this.stats.errors++;
+              console.error(`❌ Game error:`, error.message);
+              return null;
+            })
         )
       );
 
-      allGames.push(...batchResults.filter(game => !game.error));
+      const validResults = batchResults.filter(game => game !== null);
+      newGames.push(...validResults);
       
-      const progress = (allGames.length / gameIds.length * 100).toFixed(1);
-      console.log(`📊 ${allGames.length}/${gameIds.length} (${progress}%)`);
-
+      const progress = ((i + 1) / batches.length * 100).toFixed(1);
+      console.log(`📊 Batch ${i + 1}/${batches.length} (${progress}%) | New: ${validResults.length} | Total: ${newGames.length}`);
+      
       if (i < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenDetails));
       }
     }
 
     this.stats.total += gameIds.length;
-    return { platformName, games: allGames };
+    return { platformName, games: newGames };
   }
 
-  savePlatformData(platformName, games) {
+  savePlatformData(platformName, newGames) {
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
     const cleanName = platformName.replace(/[<>:"/\\|?*]/g, '').trim();
     const outputFile = `${OUTPUT_DIR}/${cleanName}.csv`;
     
     const csvHeader = "title,alternate_titles,region,country,publisher,developer,release_date,players,coop,genre,esrb_rating,description\n";
-    const csvData = games.map(g => [
-      g.title, g.alternate_titles, g.region, g.country, g.publisher, 
-      g.developer, g.release_date, g.players, g.coop, g.genre, 
-      g.esrb_rating, g.description
-    ].map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
-
-    fs.writeFileSync(outputFile, csvHeader + csvData);
-    console.log(`💾 Saved ${games.length} games to: ${outputFile}`);
+    
+    let csvData = '';
+    
+    if (fs.existsSync(outputFile)) {
+      // Append new games to existing file
+      csvData = newGames.map(g => [
+        g.title, g.alternate_titles, g.region, g.country, g.publisher, 
+        g.developer, g.release_date, g.players, g.coop, g.genre, 
+        g.esrb_rating, g.description
+      ].map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+      
+      fs.appendFileSync(outputFile, '\n' + csvData);
+      console.log(`📝 Appended ${newGames.length} new games to: ${outputFile}`);
+    } else {
+      // Create new file with header
+      csvData = csvHeader + newGames.map(g => [
+        g.title, g.alternate_titles, g.region, g.country, g.publisher, 
+        g.developer, g.release_date, g.players, g.coop, g.genre, 
+        g.esrb_rating, g.description
+      ].map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+      
+      fs.writeFileSync(outputFile, csvData);
+      console.log(`💾 Created new file with ${newGames.length} games: ${outputFile}`);
+    }
+    
     return outputFile;
   }
 
   async run() {
-    console.log(`🎮 Starting Scraper for ${PLATFORM_IDS.length} platforms...\n`);
+    console.log(`🎮 Starting Smart Scraper for ${PLATFORM_IDS.length} platforms...\n`);
 
     for (const platformId of PLATFORM_IDS) {
       console.log(`\n🔸 Processing Platform ID: ${platformId}`);
       const platformData = await this.scrapePlatform(platformId);
       
-      if (platformData) {
+      if (platformData && platformData.games.length > 0) {
         this.savePlatformData(platformData.platformName, platformData.games);
+      } else if (platformData) {
+        console.log(`✅ All games already up to date for ${platformData.platformName}`);
       }
     }
 
-    console.log(`\n📈 Completed: ${this.stats.success}/${this.stats.total} games`);
+    console.log(`\n📈 Final Stats:`);
+    console.log(`✅ New: ${this.stats.success}`);
+    console.log(`⏭️ Skipped: ${this.stats.skipped}`);
     console.log(`❌ Errors: ${this.stats.errors}`);
+    console.log(`📋 Total Processed: ${this.stats.total}`);
   }
 }
 
