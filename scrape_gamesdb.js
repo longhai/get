@@ -77,13 +77,21 @@ class GameScraper {
           try {
             const $card = $(el);
             
-            // Lấy ID từ link
-            const gameLink = $card.find("a").attr("href");
-            const idMatch = gameLink ? gameLink.match(/id=(\d+)/) : null;
-            const id = idMatch ? idMatch[1] : "";
+            // Lấy ID từ link - FIX: sử dụng selector đúng
+            const gameLink = $card.closest('a').attr('href');
+            console.log(`🔗 Found link: ${gameLink}`); // Debug
             
+            let id = "";
+            if (gameLink) {
+              // Xử lý cả ./game.php?id=109954 và game.php?id=109954
+              const idMatch = gameLink.match(/[?&]id=(\d+)/);
+              if (idMatch) {
+                id = idMatch[1];
+              }
+            }
+
             if (!id) {
-              console.log("⚠️ Skipping card - no ID found");
+              console.log(`⚠️ Skipping card - no ID found in link: ${gameLink}`);
               return;
             }
 
@@ -100,16 +108,14 @@ class GameScraper {
             let date = "";
             let platform = "";
 
-            if (paragraphs.length >= 3) {
-              region = $(paragraphs[1]).text().trim();
-              date = $(paragraphs[2]).text().trim();
-            }
-            
-            if (paragraphs.length >= 4) {
-              platform = $(paragraphs[3]).text().trim();
-            }
+            paragraphs.each((index, p) => {
+              const text = $(p).text().trim();
+              if (index === 1) region = text;
+              if (index === 2) date = text;
+              if (index === 3) platform = text;
+            });
 
-            results.push({ 
+            const gameData = { 
               id, 
               title, 
               region, 
@@ -117,8 +123,9 @@ class GameScraper {
               platform, 
               img,
               detail_url: `https://thegamesdb.net/game.php?id=${id}`
-            });
+            };
             
+            results.push(gameData);
             pageCount++;
             console.log(`🎮 Found: ${title} (ID: ${id})`);
             
@@ -131,7 +138,7 @@ class GameScraper {
         console.log(`✅ Page ${page}: Processed ${pageCount} games`);
 
         // Kiểm tra có trang tiếp theo không
-        const hasNext = $("a.page-link:contains('Next')").length > 0;
+        const hasNext = $('a.page-link:contains("Next")').length > 0;
         console.log(`🔍 Next page available: ${hasNext}`);
         
         if (!hasNext) {
@@ -143,6 +150,12 @@ class GameScraper {
         
         // Delay giữa các trang
         await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenPages));
+        
+        // Giới hạn số trang để test (có thể xóa sau)
+        if (page > 3) {
+          console.log("🧪 Test limit reached, stopping after 3 pages");
+          break;
+        }
         
       } catch (error) {
         console.error(`❌ Error on page ${page}:`, error.message);
@@ -337,13 +350,14 @@ class GameScraper {
       
       this.saveBasicData(basicGames);
       
-      // Bước 2: Scrape chi tiết từng game
-      await this.scrapeAllDetails(basicGames);
+      // Bước 2: Scrape chi tiết từng game (tùy chọn - có thể comment để test nhanh)
+      console.log("⏸️ Skipping detailed scraping for now...");
+      // await this.scrapeAllDetails(basicGames);
       
       // Thống kê
       this.printStats();
       
-      console.log("🎉 Scraping completed successfully!");
+      console.log("🎉 Basic scraping completed successfully!");
       
     } catch (error) {
       console.error("💥 Fatal error in scraper:", error);
