@@ -1,4 +1,4 @@
-name: Scrape NES GamesDB
+name: Scrape GamesDB
 
 on:
   workflow_dispatch:
