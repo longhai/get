@@ -4,9 +4,9 @@ import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
 const PLATFORM_ID = 7; // NES
+const PLATFORM_NAME = "NES";
 const OUTPUT_DIR = "data";
-const BASIC_FILE = `${OUTPUT_DIR}/nes_games_basic.csv`;
-const DETAILED_FILE = `${OUTPUT_DIR}/nes_games_detailed.csv`;
+const OUTPUT_FILE = `${OUTPUT_DIR}/${PLATFORM_NAME}.csv`;
 
 // Config
 const CONFIG = {
@@ -19,8 +19,9 @@ const CONFIG = {
 class GameScraper {
   constructor() {
     this.stats = {
-      basic: { total: 0, success: 0, errors: 0 },
-      detailed: { total: 0, success: 0, errors: 0 }
+      total: 0,
+      success: 0,
+      errors: 0
     };
   }
 
@@ -51,7 +52,7 @@ class GameScraper {
   }
 
   async scrapeBasicList(platformId) {
-    console.log("📥 Starting basic game list scraping...");
+    console.log("📥 Starting game list scraping...");
     let page = 1;
     let results = [];
 
@@ -137,7 +138,6 @@ class GameScraper {
           }
         });
 
-        this.stats.basic.success += pageCount;
         console.log(`✅ Page ${page}: Processed ${pageCount} games`);
 
         // Kiểm tra có trang tiếp theo không
@@ -156,12 +156,10 @@ class GameScraper {
         
       } catch (error) {
         console.error(`❌ Error on page ${page}:`, error.message);
-        this.stats.basic.errors++;
         break;
       }
     }
 
-    this.stats.basic.total = results.length;
     return results;
   }
 
@@ -173,12 +171,8 @@ class GameScraper {
       const html = await this.fetchWithRetry(url);
       const $ = cheerio.load(html);
 
-      // Debug: Log toàn bộ HTML để kiểm tra cấu trúc
-      // console.log(`📄 HTML for game ${gameId}:`, html.substring(0, 2000));
-
       // Lấy thông tin cơ bản
       const title = $("h1").first().text().trim();
-      console.log(`📝 Game ${gameId}: Title = "${title}"`);
 
       // Lấy Alternate Titles (Also Known As)
       let alternateTitles = "";
@@ -186,11 +180,10 @@ class GameScraper {
         const heading = $(el).text().trim();
         if (heading.includes('Alternate Titles') || heading.includes('Also Known As')) {
           alternateTitles = $(el).next('p').text().trim();
-          console.log(`🔄 Game ${gameId}: Alternate Titles = "${alternateTitles}"`);
         }
       });
 
-      // Lấy thông tin từ bảng game-info - THỬ NHIỀU CÁCH KHÁC NHAU
+      // Lấy thông tin từ bảng game-info
       const gameInfo = {};
       
       // Cách 1: Tìm bảng theo class
@@ -201,16 +194,12 @@ class GameScraper {
           const value = $(cells[1]).text().trim();
           if (key && value) {
             gameInfo[key] = value;
-            console.log(`📋 Game ${gameId}: ${key} = "${value}"`);
           }
         }
       });
 
       // Cách 2: Tìm theo text content nếu bảng không có class
       if (Object.keys(gameInfo).length === 0) {
-        console.log(`🔍 Game ${gameId}: Trying alternative parsing method...`);
-        
-        // Tìm tất cả các thẻ có chứa thông tin game
         $('p, div, span').each((_, el) => {
           const text = $(el).text().trim();
           const lowerText = text.toLowerCase();
@@ -230,28 +219,6 @@ class GameScraper {
           if (lowerText.includes('players:')) {
             gameInfo['Players'] = text.replace('Players:', '').trim();
           }
-          if (lowerText.includes('platform:')) {
-            gameInfo['Platform'] = text.replace('Platform:', '').trim();
-          }
-        });
-      }
-
-      // Cách 3: Tìm theo cấu trúc phổ biến của game sites
-      if (Object.keys(gameInfo).length === 0) {
-        console.log(`🔍 Game ${gameId}: Trying common game site structure...`);
-        
-        // Giả sử thông tin nằm trong các thẻ <b> hoặc <strong>
-        $('b, strong').each((_, el) => {
-          const label = $(el).text().trim().replace(':', '');
-          const value = $(el).parent().text().replace($(el).text(), '').trim();
-          
-          if (label && value && !value.includes('©') && value.length < 100) {
-            const commonLabels = ['Developer', 'Publisher', 'Genre', 'Release Date', 'Players', 'Platform'];
-            if (commonLabels.some(l => label.toLowerCase().includes(l.toLowerCase()))) {
-              gameInfo[label] = value;
-              console.log(`🏷️ Game ${gameId}: ${label} = "${value}"`);
-            }
-          }
         });
       }
 
@@ -261,17 +228,11 @@ class GameScraper {
         const heading = $(el).text().trim();
         if (heading.includes('Description') || heading.includes('Overview')) {
           description = $(el).next('p').text().trim();
-          console.log(`📖 Game ${gameId}: Description found (${description.length} chars)`);
         }
       });
 
       // Lấy rating (nếu có)
       const rating = $(".rating-value, .rating, [class*='rating']").first().text().trim();
-      if (rating) {
-        console.log(`⭐ Game ${gameId}: Rating = "${rating}"`);
-      }
-
-      console.log(`✅ Game ${gameId}: Scraped ${Object.keys(gameInfo).length} info fields`);
 
       return {
         id: gameId,
@@ -285,143 +246,139 @@ class GameScraper {
         region: gameInfo.Region || gameInfo.region || "",
         players: gameInfo.Players || gameInfo.players || "",
         rating: rating || "",
-        description: description,
-        scraped_at: new Date().toISOString(),
-        // Thêm debug info
-        _debug: {
-          infoFields: Object.keys(gameInfo),
-          infoCount: Object.keys(gameInfo).length
-        }
+        description: description
       };
       
     } catch (error) {
       console.error(`❌ Error scraping game ${gameId}:`, error.message);
       return {
         id: gameId,
-        error: error.message,
-        scraped_at: new Date().toISOString()
+        error: error.message
       };
     }
   }
 
-  async scrapeAllDetails(gameList) {
+  async scrapeAllGamesWithDetails(gameList) {
     console.log("📥 Starting detailed game scraping...");
     console.log(`📋 Total games to scrape: ${gameList.length}`);
 
     if (gameList.length === 0) {
-      console.log("❌ No games to scrape details for.");
-      return;
+      console.log("❌ No games found to scrape.");
+      return [];
     }
 
-    // Tạo CSV header với tất cả các trường cần thiết
-    const detailedHeader = "id,title,alternate_titles,platform,publisher,developer,genre,release_date,region,players,rating,description,scraped_at,error\n";
-    
-    if (!fs.existsSync(DETAILED_FILE)) {
-      fs.writeFileSync(DETAILED_FILE, detailedHeader);
-    }
-
+    const allGamesWithDetails = [];
     const validGames = gameList.filter(game => game.id);
-    this.stats.detailed.total = validGames.length;
+    this.stats.total = validGames.length;
 
-    console.log(`🔍 Starting detailed scraping for ${validGames.length} valid games...`);
+    console.log(`🔍 Starting detailed scraping for ${validGames.length} games...`);
 
-    // TEST: Chỉ scrape 5 game đầu tiên để kiểm tra
-    const testGames = validGames.slice(0, 5);
-    console.log(`🧪 TEST MODE: Scraping first ${testGames.length} games only`);
-
-    for (let i = 0; i < testGames.length; i++) {
-      const game = testGames[i];
-      console.log(`\n🔍 [${i + 1}/${testGames.length}] Scraping details for: ${game.title} (ID: ${game.id})`);
+    for (let i = 0; i < validGames.length; i++) {
+      const basicGame = validGames[i];
+      console.log(`\n🔍 [${i + 1}/${validGames.length}] Scraping: ${basicGame.title} (ID: ${basicGame.id})`);
       
-      const details = await this.scrapeGameDetails(game.id);
+      const details = await this.scrapeGameDetails(basicGame.id);
       
       // Kết hợp thông tin cơ bản và chi tiết
-      const combinedData = {
-        ...game,
-        ...details,
-        basic_title: game.title,
-        scraped_at: new Date().toISOString()
+      const fullGameData = {
+        // Thông tin cơ bản từ danh sách
+        id: basicGame.id,
+        title: basicGame.title,
+        region: basicGame.region,
+        release_date: basicGame.release_date,
+        platform: basicGame.platform,
+        detail_url: basicGame.detail_url,
+        
+        // Thông tin chi tiết từ trang game
+        alternate_titles: details.alternate_titles || "",
+        publisher: details.publisher || "",
+        developer: details.developer || "",
+        genre: details.genre || "",
+        players: details.players || "",
+        rating: details.rating || "",
+        description: details.description || "",
+        
+        // Timestamp
+        scraped_at: new Date().toISOString(),
+        
+        // Error info (nếu có)
+        error: details.error || ""
       };
-
-      // Ghi vào CSV chi tiết
-      const csvRow = [
-        combinedData.id,
-        combinedData.title || combinedData.basic_title,
-        combinedData.alternate_titles || "",
-        combinedData.platform || game.platform,
-        combinedData.publisher || "",
-        combinedData.developer || "",
-        combinedData.genre || "",
-        combinedData.release_date || game.release_date,
-        combinedData.region || game.region,
-        combinedData.players || "",
-        combinedData.rating || "",
-        combinedData.description || "",
-        combinedData.scraped_at,
-        combinedData.error || ""
-      ].map(x => `"${String(x).replace(/"/g, '""')}"`).join(",") + "\n";
       
-      fs.appendFileSync(DETAILED_FILE, csvRow);
+      allGamesWithDetails.push(fullGameData);
       
-      if (combinedData.error) {
-        this.stats.detailed.errors++;
-        console.log(`❌ Failed: ${game.title}`);
+      if (details.error) {
+        this.stats.errors++;
+        console.log(`❌ Failed: ${basicGame.title}`);
       } else {
-        this.stats.detailed.success++;
-        console.log(`✅ Success: ${game.title}`);
-        console.log(`   📊 Info fields found: ${combinedData._debug?.infoCount || 0}`);
-        console.log(`   🏢 Developer: ${combinedData.developer || 'N/A'}`);
-        console.log(`   🏢 Publisher: ${combinedData.publisher || 'N/A'}`);
-        console.log(`   🎮 Genre: ${combinedData.genre || 'N/A'}`);
-        console.log(`   👥 Players: ${combinedData.players || 'N/A'}`);
+        this.stats.success++;
+        console.log(`✅ Success: ${basicGame.title}`);
+        console.log(`   🏢 Developer: ${fullGameData.developer || 'N/A'}`);
+        console.log(`   🏢 Publisher: ${fullGameData.publisher || 'N/A'}`);
+        console.log(`   🎮 Genre: ${fullGameData.genre || 'N/A'}`);
+        console.log(`   👥 Players: ${fullGameData.players || 'N/A'}`);
+        console.log(`   🔄 Alt Titles: ${fullGameData.alternate_titles || 'N/A'}`);
       }
       
+      // Progress tracking
+      const progress = ((i + 1) / validGames.length * 100).toFixed(1);
+      console.log(`📊 Overall Progress: ${i + 1}/${validGames.length} (${progress}%) | ✅ ${this.stats.success} | ❌ ${this.stats.errors}`);
+      
       // Delay giữa các request chi tiết
-      if (i < testGames.length - 1) {
+      if (i < validGames.length - 1) {
         const delay = CONFIG.delayBetweenDetails + Math.random() * 1000;
-        console.log(`⏳ Waiting ${Math.round(delay/1000)}s before next request...`);
+        console.log(`⏳ Waiting ${Math.round(delay/1000)}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
+
+    return allGamesWithDetails;
   }
 
-  saveBasicData(games) {
+  saveFullData(games) {
     if (!fs.existsSync(OUTPUT_DIR)) {
       fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
     
-    const csvHeader = "id,title,region,release_date,platform,detail_url\n";
+    // CSV header với tất cả các trường
+    const csvHeader = "id,title,region,release_date,platform,alternate_titles,publisher,developer,genre,players,rating,description,detail_url,scraped_at,error\n";
+    
     const csvData = games
-      .map(g => [g.id, g.title, g.region, g.release_date, g.platform, g.detail_url]
-        .map(x => `"${String(x).replace(/"/g, '""')}"`)
-        .join(","))
+      .map(g => [
+        g.id,
+        g.title,
+        g.region,
+        g.release_date,
+        g.platform,
+        g.alternate_titles,
+        g.publisher,
+        g.developer,
+        g.genre,
+        g.players,
+        g.rating,
+        g.description,
+        g.detail_url,
+        g.scraped_at,
+        g.error
+      ].map(x => `"${String(x).replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
-    fs.writeFileSync(BASIC_FILE, csvHeader + csvData);
-    console.log(`💾 Basic data saved to: ${BASIC_FILE}`);
-    console.log(`📝 Saved ${games.length} games to basic file`);
+    fs.writeFileSync(OUTPUT_FILE, csvHeader + csvData);
+    console.log(`💾 Full data saved to: ${OUTPUT_FILE}`);
+    console.log(`📝 Saved ${games.length} games with complete details`);
   }
 
   printStats() {
     console.log("\n📈 ===== SCRAPING STATISTICS =====");
-    console.log(`📋 Basic Scraping:`);
-    console.log(`   Total: ${this.stats.basic.total}`);
-    console.log(`   Success: ${this.stats.basic.success}`);
-    console.log(`   Errors: ${this.stats.basic.errors}`);
-    
-    console.log(`\n🔍 Detailed Scraping:`);
-    console.log(`   Total: ${this.stats.detailed.total}`);
-    console.log(`   Success: ${this.stats.detailed.success}`);
-    console.log(`   Errors: ${this.stats.detailed.errors}`);
-    
-    console.log(`\n💾 Output Files:`);
-    console.log(`   Basic: ${BASIC_FILE}`);
-    console.log(`   Detailed: ${DETAILED_FILE}`);
+    console.log(`🎮 Total Games: ${this.stats.total}`);
+    console.log(`✅ Success: ${this.stats.success}`);
+    console.log(`❌ Errors: ${this.stats.errors}`);
+    console.log(`💾 Output File: ${OUTPUT_FILE}`);
     console.log("====================================\n");
   }
 
   async run() {
-    console.log("🎮 Starting NES GamesDB Scraper...\n");
+    console.log(`🎮 Starting ${PLATFORM_NAME} GamesDB Scraper...\n`);
     
     try {
       // Bước 1: Scrape danh sách cơ bản
@@ -432,17 +389,18 @@ class GameScraper {
         return;
       }
       
-      this.saveBasicData(basicGames);
+      console.log(`📋 Found ${basicGames.length} games in basic list`);
       
-      // Bước 2: Scrape chi tiết từng game (TEST MODE - chỉ 5 game đầu)
-      console.log("🚀 Starting DETAILED scraping (TEST MODE - 5 games)...");
-      await this.scrapeAllDetails(basicGames);
+      // Bước 2: Scrape chi tiết cho tất cả game
+      const allGamesWithDetails = await this.scrapeAllGamesWithDetails(basicGames);
+      
+      // Bước 3: Lưu toàn bộ dữ liệu vào 1 CSV
+      this.saveFullData(allGamesWithDetails);
       
       // Thống kê
       this.printStats();
       
-      console.log("🎉 Test scraping completed! Check the CSV file for results.");
-      console.log("📊 If all fields are populated correctly, remove the test limit to scrape all games.");
+      console.log("🎉 All scraping completed successfully!");
       
     } catch (error) {
       console.error("💥 Fatal error in scraper:", error);
