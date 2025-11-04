@@ -3,27 +3,22 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const PLATFORM_ID = 7; // NES
 const OUTPUT_DIR = "data";
 
-// Config
 const CONFIG = {
   delayBetweenPages: 500,
   delayBetweenDetails: 100,
   maxRetries: 3,
   timeout: 30000,
-  maxPages: 3, // CHỈ TEST 3 TRANG
-  concurrency: 5 // Số request song song
+  maxPages: 3,
+  concurrency: 5
 };
 
 class GameScraper {
-  constructor() {
-    this.stats = {
-      total: 0,
-      success: 0,
-      errors: 0
-    };
-    this.platformName = "NES";
+  constructor(platformId) {
+    this.platformId = platformId;
+    this.stats = { total: 0, success: 0, errors: 0 };
+    this.platformName = "";
   }
 
   async fetchWithRetry(url, retries = CONFIG.maxRetries) {
@@ -35,7 +30,7 @@ class GameScraper {
         const res = await fetch(url, { 
           signal: controller.signal,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           }
         });
         clearTimeout(timeoutId);
@@ -44,94 +39,59 @@ class GameScraper {
         return await res.text();
         
       } catch (error) {
-        console.warn(`⚠️ Attempt ${attempt}/${retries} failed for ${url}: ${error.message}`);
+        console.warn(`⚠️ Attempt ${attempt}/${retries} failed: ${error.message}`);
         if (attempt === retries) throw error;
-        
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
     }
   }
 
-  async scrapeGameIds(platformId) {
-    console.log("📥 Scraping game IDs from list...");
+  async scrapeGameIds() {
+    console.log(`📥 Scraping platform ${this.platformId}...`);
     let page = 1;
     let gameIds = [];
 
     while (page <= CONFIG.maxPages) {
-      const url = `${BASE_URL}?platform_id=${platformId}&page=${page}`;
-      console.log(`🔹 Fetching page ${page}: ${url}`);
+      const url = `${BASE_URL}?platform_id=${this.platformId}&page=${page}`;
+      console.log(`🔹 Page ${page}: ${url}`);
       
       try {
         const html = await this.fetchWithRetry(url);
         const $ = cheerio.load(html);
 
-        // Lấy tên platform từ trang đầu tiên - SỬA SELECTOR
+        // Lấy tên platform từ trang đầu
         if (page === 1) {
           const platformElement = $(".card-header legend");
           if (platformElement.length > 0) {
-            // Lấy text và loại bỏ ảnh
-            let platformText = platformElement.text().trim();
-            // Loại bỏ khoảng trắng thừa
-            platformText = platformText.replace(/\s+/g, ' ').trim();
-            
-            if (platformText) {
-              this.platformName = platformText;
-              console.log(`🎮 Platform detected: "${this.platformName}"`);
-            }
+            this.platformName = platformElement.text().trim().replace(/\s+/g, ' ');
+            console.log(`🎮 Platform: "${this.platformName}"`);
           }
         }
 
         const cards = $(".col-6.col-md-2 .card.border-primary");
-        console.log(`🎯 Found ${cards.length} cards on page ${page}`);
-        
-        if (cards.length === 0) {
-          console.log("📭 No more cards found, stopping.");
-          break;
-        }
+        if (cards.length === 0) break;
 
-        let pageCount = 0;
         cards.each((_, el) => {
-          try {
-            const $card = $(el);
-            
-            // Lấy ID từ link
-            const gameLink = $card.closest('a').attr('href');
-            let id = "";
-            if (gameLink) {
-              const idMatch = gameLink.match(/[?&]id=(\d+)/);
-              if (idMatch) {
-                id = idMatch[1];
-                gameIds.push(id);
-                pageCount++;
-              }
-            }
-
-          } catch (cardError) {
-            console.warn(`⚠️ Error processing card: ${cardError.message}`);
-          }
+          const gameLink = $(el).closest('a').attr('href');
+          const idMatch = gameLink?.match(/[?&]id=(\d+)/);
+          if (idMatch) gameIds.push(idMatch[1]);
         });
 
-        console.log(`✅ Page ${page}: Found ${pageCount} game IDs`);
+        console.log(`✅ Page ${page}: Found ${cards.length} games`);
 
-        // Kiểm tra có trang tiếp theo không
         const hasNext = $('a.page-link:contains("Next")').length > 0;
-        if (!hasNext) {
-          console.log("⏹️ No next page, stopping.");
-          break;
-        }
+        if (!hasNext) break;
         
         page++;
-        
-        // Delay giữa các trang
         await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenPages));
         
       } catch (error) {
-        console.error(`❌ Error on page ${page}:`, error.message);
+        console.error(`❌ Page ${page} error:`, error.message);
         break;
       }
     }
 
-    console.log(`📋 Total game IDs found: ${gameIds.length}`);
+    console.log(`📋 Total IDs: ${gameIds.length}`);
     return gameIds;
   }
 
@@ -142,173 +102,72 @@ class GameScraper {
       const html = await this.fetchWithRetry(url);
       const $ = cheerio.load(html);
 
-      // Lấy thông tin từ HTML thực tế
-      const title = $("h1").first().text().trim();
+      const getText = (selector, replaceText = '') => 
+        $(selector).text().replace(replaceText, '').trim();
 
-      // Lấy Alternate Titles (Also know as)
-      let alternateTitles = "";
-      const altTitlesElement = $("h6.text-muted");
-      if (altTitlesElement.length > 0) {
-        alternateTitles = altTitlesElement.text().replace('Also know as:', '').trim();
-      }
-
-      // Lấy thông tin từ card bên trái
       const leftCard = $(".col-12.col-md-3.col-lg-2 .card.border-primary");
-      
-      // Platform - luôn dùng platformName đã detect
-      const platform = this.platformName;
-
-      // Region
-      let region = "";
-      const regionElement = leftCard.find("p:contains('Region:')");
-      if (regionElement.length > 0) {
-        region = regionElement.text().replace('Region:', '').trim();
-      }
-
-      // Country
-      let country = "";
-      const countryElement = leftCard.find("p:contains('Country:')");
-      if (countryElement.length > 0) {
-        country = countryElement.text().replace('Country:', '').trim();
-      }
-
-      // Developer
-      let developer = "";
-      const developerElement = leftCard.find("p:contains('Developer(s):')");
-      if (developerElement.length > 0) {
-        developer = developerElement.text().replace('Developer(s):', '').trim();
-      }
-
-      // Publisher
-      let publisher = "";
-      const publisherElement = leftCard.find("p:contains('Publishers(s):')");
-      if (publisherElement.length > 0) {
-        publisher = publisherElement.text().replace('Publishers(s):', '').trim();
-      }
-
-      // Release Date
-      let releaseDate = "";
-      const releaseDateElement = leftCard.find("p:contains('ReleaseDate:')");
-      if (releaseDateElement.length > 0) {
-        releaseDate = releaseDateElement.text().replace('ReleaseDate:', '').trim();
-      }
-
-      // Players
-      let players = "";
-      const playersElement = leftCard.find("p:contains('Players:')");
-      if (playersElement.length > 0) {
-        players = playersElement.text().replace('Players:', '').trim();
-      }
-
-      // Co-op
-      let coop = "";
-      const coopElement = leftCard.find("p:contains('Co-op:')");
-      if (coopElement.length > 0) {
-        coop = coopElement.text().replace('Co-op:', '').trim();
-      }
-
-      // Lấy thông tin từ card chính (bên phải)
       const mainCard = $(".col-12.col-md-9.col-lg-8 .card.border-primary").first();
 
-      // Description
-      let description = "";
-      const descriptionElement = mainCard.find(".game-overview");
-      if (descriptionElement.length > 0) {
-        description = descriptionElement.text().trim();
-      }
-
-      // ESRB Rating
-      let esrbRating = "";
-      const esrbElement = mainCard.find("p:contains('ESRB Rating:')");
-      if (esrbElement.length > 0) {
-        esrbRating = esrbElement.text().replace('ESRB Rating:', '').trim();
-      }
-
-      // Genre
-      let genre = "";
-      const genreElement = mainCard.find("p:contains('Genre(s):')");
-      if (genreElement.length > 0) {
-        genre = genreElement.text().replace('Genre(s):', '').trim();
-      }
-
-      console.log(`✅ Scraped: ${title}`);
-
-      return {
-        title: title || "",
-        alternate_titles: alternateTitles || "",
-        platform: platform || "",
-        region: region || "",
-        country: country || "",
-        publisher: publisher || "",
-        developer: developer || "",
-        release_date: releaseDate || "",
-        players: players || "",
-        coop: coop || "",
-        genre: genre || "",
-        esrb_rating: esrbRating || "",
-        description: description || ""
+      const gameData = {
+        title: getText("h1"),
+        alternate_titles: getText("h6.text-muted", 'Also know as:'),
+        region: getText(leftCard, "p:contains('Region:')", 'Region:'),
+        country: getText(leftCard, "p:contains('Country:')", 'Country:'),
+        publisher: getText(leftCard, "p:contains('Publishers(s):')", 'Publishers(s):'),
+        developer: getText(leftCard, "p:contains('Developer(s):')", 'Developer(s):'),
+        release_date: getText(leftCard, "p:contains('ReleaseDate:')", 'ReleaseDate:'),
+        players: getText(leftCard, "p:contains('Players:')", 'Players:'),
+        coop: getText(leftCard, "p:contains('Co-op:')", 'Co-op:'),
+        genre: getText(mainCard, "p:contains('Genre(s):')", 'Genre(s):'),
+        esrb_rating: getText(mainCard, "p:contains('ESRB Rating:')", 'ESRB Rating:'),
+        description: mainCard.find(".game-overview").text().trim()
       };
+
+      console.log(`✅ ${gameData.title}`);
+      return gameData;
       
     } catch (error) {
-      console.error(`❌ Error scraping game ${gameId}:`, error.message);
-      return {
-        error: error.message
-      };
+      console.error(`❌ Game ${gameId}:`, error.message);
+      return { error: error.message };
     }
   }
 
-  async processBatch(gameIds, batchNumber) {
-    console.log(`\n🔧 Processing batch ${batchNumber} with ${gameIds.length} games...`);
-    
-    const promises = gameIds.map(gameId => 
-      this.scrapeGameDetails(gameId)
-        .then(result => {
-          this.stats.success++;
-          return result;
-        })
-        .catch(error => {
-          this.stats.errors++;
-          console.error(`❌ Failed to scrape game ${gameId}:`, error.message);
-          return { error: error.message };
-        })
-    );
-
-    const results = await Promise.all(promises);
-    return results.filter(game => !game.error);
-  }
-
-  async scrapeAllGamesParallel(gameIds) {
-    console.log("📥 Starting PARALLEL game scraping...");
-    console.log(`📋 Total games to scrape: ${gameIds.length}`);
-    console.log(`⚡ Concurrency: ${CONFIG.concurrency} requests at once\n`);
-
-    if (gameIds.length === 0) {
-      console.log("❌ No game IDs found to scrape.");
-      return [];
-    }
+  async scrapeAllGames(gameIds) {
+    console.log(`\n📥 Scraping ${gameIds.length} games...`);
+    console.log(`⚡ Concurrency: ${CONFIG.concurrency}\n`);
 
     this.stats.total = gameIds.length;
     const allGames = [];
 
-    // Chia thành các batch nhỏ
+    // Chia thành batches
     const batches = [];
     for (let i = 0; i < gameIds.length; i += CONFIG.concurrency) {
       batches.push(gameIds.slice(i, i + CONFIG.concurrency));
     }
 
-    console.log(`🔄 Processing ${batches.length} batches...`);
-
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      const batchResults = await this.processBatch(batch, i + 1);
-      allGames.push(...batchResults);
+      console.log(`🔧 Batch ${i + 1}/${batches.length} (${batch.length} games)`);
+      
+      const promises = batch.map(gameId => 
+        this.scrapeGameDetails(gameId)
+          .then(result => {
+            if (!result.error) this.stats.success++;
+            return result;
+          })
+          .catch(error => {
+            this.stats.errors++;
+            return { error: error.message };
+          })
+      );
 
-      // Progress tracking
-      const processed = allGames.length;
-      const progress = (processed / this.stats.total * 100).toFixed(1);
-      console.log(`📊 Progress: ${processed}/${this.stats.total} (${progress}%) | ✅ ${this.stats.success} | ❌ ${this.stats.errors}`);
+      const results = await Promise.all(promises);
+      const validGames = results.filter(game => !game.error);
+      allGames.push(...validGames);
 
-      // Delay giữa các batch
+      const progress = (allGames.length / this.stats.total * 100).toFixed(1);
+      console.log(`📊 ${allGames.length}/${this.stats.total} (${progress}%) | ✅ ${this.stats.success} | ❌ ${this.stats.errors}`);
+
       if (i < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenDetails));
       }
@@ -322,94 +181,75 @@ class GameScraper {
       fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
 
-    // Tạo tên file từ platform name (giữ nguyên tên, chỉ thay thế ký tự không hợp lệ)
-    const cleanPlatformName = this.platformName
-      .replace(/[<>:"/\\|?*]/g, '') // Loại bỏ ký tự không hợp lệ cho file name
-      .replace(/\s+/g, ' ') // Chuẩn hóa khoảng trắng
-      .trim();
+    // Tên file từ platform name
+    const cleanName = this.platformName.replace(/[<>:"/\\|?*]/g, '').trim();
+    const outputFile = `${OUTPUT_DIR}/${cleanName}.csv`;
     
-    const outputFile = `${OUTPUT_DIR}/${cleanPlatformName}.csv`;
+    // CSV header KHÔNG CÓ platform
+    const csvHeader = "title,alternate_titles,region,country,publisher,developer,release_date,players,coop,genre,esrb_rating,description\n";
     
-    console.log(`💾 Saving to: ${outputFile}`);
-    
-    // CSV header KHÔNG CÓ id, detail_url, scraped_at
-    const csvHeader = "title,alternate_titles,platform,region,country,publisher,developer,release_date,players,coop,genre,esrb_rating,description\n";
-    
-    const csvData = games
-      .map(g => [
-        g.title,
-        g.alternate_titles,
-        g.platform,
-        g.region,
-        g.country,
-        g.publisher,
-        g.developer,
-        g.release_date,
-        g.players,
-        g.coop,
-        g.genre,
-        g.esrb_rating,
-        g.description
-      ].map(x => `"${String(x).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csvData = games.map(g => [
+      g.title, g.alternate_titles, g.region, g.country, g.publisher,
+      g.developer, g.release_date, g.players, g.coop, g.genre,
+      g.esrb_rating, g.description
+    ].map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
 
     fs.writeFileSync(outputFile, csvHeader + csvData);
-    console.log(`✅ Saved ${games.length} games to: ${outputFile}`);
+    console.log(`💾 Saved ${games.length} games to: ${outputFile}`);
     
     return outputFile;
   }
 
   printStats() {
-    console.log("\n📈 ===== SCRAPING STATISTICS =====");
-    console.log(`🎮 Platform: ${this.platformName}`);
-    console.log(`📋 Total Games: ${this.stats.total}`);
-    console.log(`✅ Success: ${this.stats.success}`);
-    console.log(`❌ Errors: ${this.stats.errors}`);
-    console.log(`⚡ Concurrency: ${CONFIG.concurrency} requests`);
-    console.log("====================================\n");
+    console.log(`\n📈 ${this.platformName} Statistics`);
+    console.log(`📋 Total: ${this.stats.total} | ✅ ${this.stats.success} | ❌ ${this.stats.errors}`);
   }
 
   async run() {
-    console.log(`🎮 Starting GamesDB Scraper...\n`);
-    console.log(`🧪 TEST MODE: Only ${CONFIG.maxPages} pages`);
-    console.log(`⚡ PARALLEL MODE: ${CONFIG.concurrency} concurrent requests\n`);
+    console.log(`\n🎮 Starting Platform ${this.platformId}...`);
     
     try {
-      // Bước 1: Chỉ lấy ID từ danh sách (và detect platform name)
-      const gameIds = await this.scrapeGameIds(PLATFORM_ID);
+      const gameIds = await this.scrapeGameIds();
+      if (gameIds.length === 0) return;
+
+      const games = await this.scrapeAllGames(gameIds);
+      const outputFile = this.saveGameData(games);
       
-      if (gameIds.length === 0) {
-        console.log("❌ No game IDs found. Exiting.");
-        return;
-      }
-      
-      // Bước 2: Scrape chi tiết song song
-      const allGames = await this.scrapeAllGamesParallel(gameIds);
-      
-      // Bước 3: Lưu dữ liệu vào CSV với tên platform
-      const outputFile = this.saveGameData(allGames);
-      
-      // Thống kê
       this.printStats();
-      
-      console.log(`🎉 All scraping completed!`);
-      console.log(`📁 Output: ${outputFile}`);
+      console.log(`🎉 Completed: ${outputFile}`);
       
     } catch (error) {
-      console.error("💥 Fatal error in scraper:", error);
-      process.exit(1);
+      console.error("💥 Fatal error:", error);
     }
   }
 }
 
-// Chạy scraper
+// Hàm helper để lấy text
+function getText($, selector, replaceText = '') {
+  const element = $(selector);
+  return element.length > 0 ? element.text().replace(replaceText, '').trim() : "";
+}
+
+// Chạy nhiều platform
 async function main() {
-  const scraper = new GameScraper();
-  await scraper.run();
+  const PLATFORMS = [6, 7]; // Thêm platform IDs ở đây
+  
+  for (const platformId of PLATFORMS) {
+    const scraper = new GameScraper(platformId);
+    await scraper.run();
+    
+    // Delay giữa các platform
+    if (platformId !== PLATFORMS[PLATFORMS.length - 1]) {
+      console.log(`\n⏳ Waiting before next platform...\n`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+  
+  console.log(`\n🎊 All platforms completed!`);
 }
 
 process.on('SIGINT', () => {
-  console.log('\n🛑 Scraping interrupted by user');
+  console.log('\n🛑 Stopped by user');
   process.exit(0);
 });
 
