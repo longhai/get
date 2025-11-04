@@ -3,13 +3,14 @@ name: Scrape NES GamesDB
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * 0'
+    - cron: '0 3 * * 0'  # Chủ nhật hàng tuần lúc 3AM
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    timeout-minutes: 45  # Tăng timeout vì scraping lâu hơn
 
     steps:
       - name: Checkout repo
@@ -18,12 +19,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
+          node-version: '20'
 
       - name: Install dependencies
-        run: npm install cheerio node-fetch@2 --no-save
+        run: npm install cheerio node-fetch --no-save
 
-      - name: Run scraper
+      - name: Run integrated scraper
         run: node scrape_gamesdb.js
 
       - name: Commit results
@@ -31,5 +32,5 @@ jobs:
           git config --global user.name "GitHub Action"
           git config --global user.email "actions@github.com"
           git add data/*.csv || echo "No data files"
-          git commit -m "Update scraped data" || echo "No changes"
+          git commit -m "Update scraped NES games data" || echo "No changes"
           git push
