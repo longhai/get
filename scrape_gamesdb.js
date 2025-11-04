@@ -10,10 +10,10 @@ const DETAILED_FILE = `${OUTPUT_DIR}/nes_games_detailed.csv`;
 
 // Config
 const CONFIG = {
-  delayBetweenPages: 1000, // 1 giây giữa các trang
-  delayBetweenDetails: 2000, // 2 giây giữa các game chi tiết
+  delayBetweenPages: 1000,
+  delayBetweenDetails: 2000,
   maxRetries: 3,
-  timeout: 30000 // 30 giây
+  timeout: 30000
 };
 
 class GameScraper {
@@ -30,7 +30,12 @@ class GameScraper {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), CONFIG.timeout);
         
-        const res = await fetch(url, { signal: controller.signal });
+        const res = await fetch(url, { 
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
         clearTimeout(timeoutId);
         
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -40,7 +45,6 @@ class GameScraper {
         console.warn(`⚠️ Attempt ${attempt}/${retries} failed for ${url}: ${error.message}`);
         if (attempt === retries) throw error;
         
-        // Exponential backoff
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
     }
@@ -59,7 +63,10 @@ class GameScraper {
         const html = await this.fetchWithRetry(url);
         const $ = cheerio.load(html);
 
-        const cards = $("div.card.border-primary");
+        // Sử dụng selector chính xác từ HTML thực tế
+        const cards = $(".col-6.col-md-2 .card.border-primary");
+        console.log(`🎯 Found ${cards.length} cards on page ${page}`);
+        
         if (cards.length === 0) {
           console.log("📭 No more cards found, stopping.");
           break;
@@ -67,16 +74,41 @@ class GameScraper {
 
         let pageCount = 0;
         cards.each((_, el) => {
-          const img = $(el).find("img").attr("src")?.trim() || "";
-          const title = $(el).find(".card-footer p").first().text().trim();
-          const info = $(el).find(".card-footer p");
-          const region = $(info[1]).text().replace("Region:", "").trim();
-          const date = $(info[2]).text().replace("Release Date:", "").trim();
-          const platform = $(el).find(".text-muted").text().replace("Platform:", "").trim();
-          const idMatch = $(el).find("a").attr("href")?.match(/id=(\d+)/);
-          const id = idMatch ? idMatch[1] : "";
+          try {
+            const $card = $(el);
+            
+            // Lấy ID từ link
+            const gameLink = $card.find("a").attr("href");
+            const idMatch = gameLink ? gameLink.match(/id=(\d+)/) : null;
+            const id = idMatch ? idMatch[1] : "";
+            
+            if (!id) {
+              console.log("⚠️ Skipping card - no ID found");
+              return;
+            }
 
-          if (id) {
+            // Lấy ảnh
+            const img = $card.find("img.card-img-top").attr("src")?.trim() || "";
+            
+            // Lấy thông tin từ card-footer
+            const footer = $card.find(".card-footer");
+            const title = footer.find("p").first().text().trim();
+            
+            // Lấy các thông tin khác
+            const paragraphs = footer.find("p");
+            let region = "";
+            let date = "";
+            let platform = "";
+
+            if (paragraphs.length >= 3) {
+              region = $(paragraphs[1]).text().trim();
+              date = $(paragraphs[2]).text().trim();
+            }
+            
+            if (paragraphs.length >= 4) {
+              platform = $(paragraphs[3]).text().trim();
+            }
+
             results.push({ 
               id, 
               title, 
@@ -86,14 +118,22 @@ class GameScraper {
               img,
               detail_url: `https://thegamesdb.net/game.php?id=${id}`
             });
+            
             pageCount++;
+            console.log(`🎮 Found: ${title} (ID: ${id})`);
+            
+          } catch (cardError) {
+            console.warn(`⚠️ Error processing card: ${cardError.message}`);
           }
         });
 
         this.stats.basic.success += pageCount;
-        console.log(`✅ Page ${page}: Found ${pageCount} games`);
+        console.log(`✅ Page ${page}: Processed ${pageCount} games`);
 
+        // Kiểm tra có trang tiếp theo không
         const hasNext = $("a.page-link:contains('Next')").length > 0;
+        console.log(`🔍 Next page available: ${hasNext}`);
+        
         if (!hasNext) {
           console.log("⏹️ No next page, stopping.");
           break;
@@ -102,9 +142,7 @@ class GameScraper {
         page++;
         
         // Delay giữa các trang
-        if (page > 1) {
-          await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenPages));
-        }
+        await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenPages));
         
       } catch (error) {
         console.error(`❌ Error on page ${page}:`, error.message);
@@ -181,6 +219,11 @@ class GameScraper {
     console.log("📥 Starting detailed game scraping...");
     console.log(`📋 Total games to scrape: ${gameList.length}`);
 
+    if (gameList.length === 0) {
+      console.log("❌ No games to scrape details for.");
+      return;
+    }
+
     // Tạo CSV header cho file chi tiết
     const detailedHeader = "id,title,alternate_titles,platform,publisher,developer,genre,release_date,region,players,rating,description,images,scraped_at,error\n";
     
@@ -190,6 +233,8 @@ class GameScraper {
 
     const validGames = gameList.filter(game => game.id);
     this.stats.detailed.total = validGames.length;
+
+    console.log(`🔍 Starting detailed scraping for ${validGames.length} valid games...`);
 
     // Scrape từng game với progress tracking
     for (let i = 0; i < validGames.length; i++) {
@@ -244,7 +289,9 @@ class GameScraper {
   }
 
   saveBasicData(games) {
-    if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+    if (!fs.existsSync(OUTPUT_DIR)) {
+      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    }
     
     const csvHeader = "id,title,region,release_date,platform,image_url,detail_url\n";
     const csvData = games
@@ -255,6 +302,7 @@ class GameScraper {
 
     fs.writeFileSync(BASIC_FILE, csvHeader + csvData);
     console.log(`💾 Basic data saved to: ${BASIC_FILE}`);
+    console.log(`📝 Saved ${games.length} games to basic file`);
   }
 
   printStats() {
