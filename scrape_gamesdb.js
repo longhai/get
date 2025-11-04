@@ -11,7 +11,7 @@ const CONFIG = {
   delayBetweenDetails: 100,
   maxRetries: 3,
   timeout: 30000,
-  concurrency: 10
+  concurrency: 18
 };
 
 class GameScraper {
