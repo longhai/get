@@ -4,8 +4,8 @@ import * as cheerio from "cheerio";
 import path from "path";
 
 const BASE_URL = "https://thegamesdb.net";
-const PLATFORM_ID = process.argv[2] || 7; // mặc định NES (7)
-const OUTPUT_DIR = "./data";
+const PLATFORM_ID = process.argv[2] || 7; // mặc định NES
+const OUTPUT_DIR = "data";
 const CONCURRENCY = 8;
 
 function safeFileName(name) {
@@ -25,7 +25,7 @@ async function getAllGameIds(platformId) {
   let platformName = "Unknown Platform";
   let page = 1;
 
-  console.log(`📥 Lấy danh sách game platform_id=${platformId}...`);
+  console.log(`📥 Lấy danh sách game cho platform_id=${platformId}...`);
 
   while (nextUrl) {
     console.log(`🔎 Trang ${page}: ${nextUrl}`);
@@ -56,7 +56,7 @@ async function getAllGameIds(platformId) {
     await sleep(300);
   }
 
-  console.log(`✅ ${ids.size} game (${page} trang) — ${platformName}`);
+  console.log(`✅ Đã thu ${ids.size} ID game (${page} trang) — ${platformName}`);
   return { platformName, ids: Array.from(ids) };
 }
 
@@ -100,12 +100,12 @@ async function scrapeGame(id) {
       developers, publishers, players, coop, esrb, genres, overview
     };
   } catch (err) {
-    console.error(`⚠️ Lỗi ${id}: ${err.message}`);
+    console.error(`⚠️ Lỗi game ID ${id}: ${err.message}`);
     return null;
   }
 }
 
-// ======= CSV =======
+// ======= CSV helpers =======
 function writeCsvHeader(file) {
   const header = "title,also_known_as,release_date,region,country,developers,publishers,players,co_op,esrb,genres,overview\n";
   fs.writeFileSync(file, header);
