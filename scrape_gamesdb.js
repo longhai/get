@@ -14,7 +14,7 @@ const CONFIG = {
   delayBetweenDetails: 2000,
   maxRetries: 3,
   timeout: 30000,
-  maxPages: 3 // CHỈ TEST 3 TRANG
+  maxPages: 2 // CHỈ TEST 3 TRANG
 };
 
 class GameScraper {
@@ -57,7 +57,7 @@ class GameScraper {
     let page = 1;
     let gameIds = [];
 
-    while (page <= CONFIG.maxPages) { // CHỈ 3 TRANG
+    while (page <= CONFIG.maxPages) {
       const url = `${BASE_URL}?platform_id=${platformId}&page=${page}`;
       console.log(`🔹 Fetching page ${page}: ${url}`);
       
@@ -78,7 +78,7 @@ class GameScraper {
           try {
             const $card = $(el);
             
-            // CHỈ LẤY ID từ link
+            // Lấy ID từ link
             const gameLink = $card.closest('a').attr('href');
             let id = "";
             if (gameLink) {
@@ -130,64 +130,127 @@ class GameScraper {
       const html = await this.fetchWithRetry(url);
       const $ = cheerio.load(html);
 
-      // Lấy thông tin cơ bản
+      // Lấy thông tin từ HTML thực tế
       const title = $("h1").first().text().trim();
-      console.log(`📝 Game ${gameId}: "${title}"`);
+      console.log(`📝 Title: "${title}"`);
 
-      // Lấy Alternate Titles (Also Known As)
+      // Lấy Alternate Titles (Also know as)
       let alternateTitles = "";
-      $("h2").each((_, el) => {
-        const heading = $(el).text().trim();
-        if (heading.includes('Alternate Titles') || heading.includes('Also Known As')) {
-          alternateTitles = $(el).next('p').text().trim();
-          console.log(`🔄 Alt Titles: "${alternateTitles}"`);
-        }
-      });
+      const altTitlesElement = $("h6.text-muted");
+      if (altTitlesElement.length > 0) {
+        alternateTitles = altTitlesElement.text().replace('Also know as:', '').trim();
+        console.log(`🔄 Alternate Titles: "${alternateTitles}"`);
+      }
 
-      // Lấy thông tin từ bảng game-info
-      const gameInfo = {};
+      // Lấy thông tin từ card bên trái
+      const leftCard = $(".col-12.col-md-3.col-lg-2 .card.border-primary");
       
-      $('.game-info table tr, .table tr, table tr').each((_, row) => {
-        const cells = $(row).find('td');
-        if (cells.length >= 2) {
-          const key = $(cells[0]).text().replace(':', '').trim();
-          const value = $(cells[1]).text().trim();
-          if (key && value) {
-            gameInfo[key] = value;
-            console.log(`📋 ${key}: "${value}"`);
-          }
-        }
-      });
+      // Platform
+      let platform = "";
+      const platformElement = leftCard.find("p:contains('Platform:')");
+      if (platformElement.length > 0) {
+        platform = platformElement.text().replace('Platform:', '').trim();
+        console.log(`🎮 Platform: "${platform}"`);
+      }
 
-      // Lấy mô tả
+      // Region
+      let region = "";
+      const regionElement = leftCard.find("p:contains('Region:')");
+      if (regionElement.length > 0) {
+        region = regionElement.text().replace('Region:', '').trim();
+        console.log(`🌍 Region: "${region}"`);
+      }
+
+      // Country
+      let country = "";
+      const countryElement = leftCard.find("p:contains('Country:')");
+      if (countryElement.length > 0) {
+        country = countryElement.text().replace('Country:', '').trim();
+        console.log(`🇯🇵 Country: "${country}"`);
+      }
+
+      // Developer
+      let developer = "";
+      const developerElement = leftCard.find("p:contains('Developer(s):')");
+      if (developerElement.length > 0) {
+        developer = developerElement.text().replace('Developer(s):', '').trim();
+        console.log(`🏢 Developer: "${developer}"`);
+      }
+
+      // Publisher
+      let publisher = "";
+      const publisherElement = leftCard.find("p:contains('Publishers(s):')");
+      if (publisherElement.length > 0) {
+        publisher = publisherElement.text().replace('Publishers(s):', '').trim();
+        console.log(`🏢 Publisher: "${publisher}"`);
+      }
+
+      // Release Date
+      let releaseDate = "";
+      const releaseDateElement = leftCard.find("p:contains('ReleaseDate:')");
+      if (releaseDateElement.length > 0) {
+        releaseDate = releaseDateElement.text().replace('ReleaseDate:', '').trim();
+        console.log(`📅 Release Date: "${releaseDate}"`);
+      }
+
+      // Players
+      let players = "";
+      const playersElement = leftCard.find("p:contains('Players:')");
+      if (playersElement.length > 0) {
+        players = playersElement.text().replace('Players:', '').trim();
+        console.log(`👥 Players: "${players}"`);
+      }
+
+      // Co-op
+      let coop = "";
+      const coopElement = leftCard.find("p:contains('Co-op:')");
+      if (coopElement.length > 0) {
+        coop = coopElement.text().replace('Co-op:', '').trim();
+        console.log(`🤝 Co-op: "${coop}"`);
+      }
+
+      // Lấy thông tin từ card chính (bên phải)
+      const mainCard = $(".col-12.col-md-9.col-lg-8 .card.border-primary").first();
+
+      // Description
       let description = "";
-      $("h2").each((_, el) => {
-        const heading = $(el).text().trim();
-        if (heading.includes('Description') || heading.includes('Overview')) {
-          description = $(el).next('p').text().trim();
-          console.log(`📖 Description: ${description.length} chars`);
-        }
-      });
+      const descriptionElement = mainCard.find(".game-overview");
+      if (descriptionElement.length > 0) {
+        description = descriptionElement.text().trim();
+        console.log(`📖 Description: ${description.length} chars`);
+      }
 
-      // Lấy rating (nếu có)
-      const rating = $(".rating-value, .rating, [class*='rating']").first().text().trim();
-      if (rating) {
-        console.log(`⭐ Rating: "${rating}"`);
+      // ESRB Rating
+      let esrbRating = "";
+      const esrbElement = mainCard.find("p:contains('ESRB Rating:')");
+      if (esrbElement.length > 0) {
+        esrbRating = esrbElement.text().replace('ESRB Rating:', '').trim();
+        console.log(`📊 ESRB Rating: "${esrbRating}"`);
+      }
+
+      // Genre
+      let genre = "";
+      const genreElement = mainCard.find("p:contains('Genre(s):')");
+      if (genreElement.length > 0) {
+        genre = genreElement.text().replace('Genre(s):', '').trim();
+        console.log(`🎯 Genre: "${genre}"`);
       }
 
       return {
         id: gameId,
         title,
         alternate_titles: alternateTitles,
-        platform: gameInfo.Platform || gameInfo.platform || PLATFORM_NAME,
-        publisher: gameInfo.Publisher || gameInfo.publisher || "",
-        developer: gameInfo.Developer || gameInfo.developer || "",
-        genre: gameInfo.Genre || gameInfo.genre || "",
-        release_date: gameInfo["Release Date"] || gameInfo["Release"] || gameInfo["Released"] || "",
-        region: gameInfo.Region || gameInfo.region || "",
-        players: gameInfo.Players || gameInfo.players || "",
-        rating: rating || "",
-        description: description,
+        platform: platform || PLATFORM_NAME,
+        region,
+        country,
+        publisher,
+        developer,
+        release_date: releaseDate,
+        players,
+        coop,
+        genre,
+        esrb_rating: esrbRating,
+        description,
         detail_url: url,
         scraped_at: new Date().toISOString()
       };
@@ -251,8 +314,8 @@ class GameScraper {
       fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
     
-    // CSV header với tất cả các trường từ trang chi tiết
-    const csvHeader = "id,title,alternate_titles,platform,publisher,developer,genre,release_date,region,players,rating,description,detail_url,scraped_at,error\n";
+    // CSV header với tất cả các trường từ HTML thực tế
+    const csvHeader = "id,title,alternate_titles,platform,region,country,publisher,developer,release_date,players,coop,genre,esrb_rating,description,detail_url,scraped_at,error\n";
     
     const csvData = games
       .map(g => [
@@ -260,13 +323,15 @@ class GameScraper {
         g.title || "",
         g.alternate_titles || "",
         g.platform || "",
+        g.region || "",
+        g.country || "",
         g.publisher || "",
         g.developer || "",
-        g.genre || "",
         g.release_date || "",
-        g.region || "",
         g.players || "",
-        g.rating || "",
+        g.coop || "",
+        g.genre || "",
+        g.esrb_rating || "",
         g.description || "",
         g.detail_url || "",
         g.scraped_at,
