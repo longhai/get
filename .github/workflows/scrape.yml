@@ -1,4 +1,3 @@
-scrape.yml
 name: Scrape NES GamesDB
 
 on:
