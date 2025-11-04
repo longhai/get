@@ -23,7 +23,7 @@ class GameScraper {
       success: 0,
       errors: 0
     };
-    this.platformName = "NES"; // Mặc định, sẽ được cập nhật
+    this.platformName = "NES";
   }
 
   async fetchWithRetry(url, retries = CONFIG.maxRetries) {
@@ -65,12 +65,19 @@ class GameScraper {
         const html = await this.fetchWithRetry(url);
         const $ = cheerio.load(html);
 
-        // Lấy tên platform từ trang đầu tiên
+        // Lấy tên platform từ trang đầu tiên - SỬA SELECTOR
         if (page === 1) {
-          const platformElement = $("legend img + br").prev().text().trim();
-          if (platformElement) {
-            this.platformName = platformElement;
-            console.log(`🎮 Platform detected: ${this.platformName}`);
+          const platformElement = $(".card-header legend");
+          if (platformElement.length > 0) {
+            // Lấy text và loại bỏ ảnh
+            let platformText = platformElement.text().trim();
+            // Loại bỏ khoảng trắng thừa
+            platformText = platformText.replace(/\s+/g, ' ').trim();
+            
+            if (platformText) {
+              this.platformName = platformText;
+              console.log(`🎮 Platform detected: "${this.platformName}"`);
+            }
           }
         }
 
@@ -148,12 +155,8 @@ class GameScraper {
       // Lấy thông tin từ card bên trái
       const leftCard = $(".col-12.col-md-3.col-lg-2 .card.border-primary");
       
-      // Platform
-      let platform = this.platformName;
-      const platformElement = leftCard.find("p:contains('Platform:')");
-      if (platformElement.length > 0) {
-        platform = platformElement.text().replace('Platform:', '').trim();
-      }
+      // Platform - luôn dùng platformName đã detect
+      const platform = this.platformName;
 
       // Region
       let region = "";
@@ -305,7 +308,7 @@ class GameScraper {
       const progress = (processed / this.stats.total * 100).toFixed(1);
       console.log(`📊 Progress: ${processed}/${this.stats.total} (${progress}%) | ✅ ${this.stats.success} | ❌ ${this.stats.errors}`);
 
-      // Delay giữa các batch (nhỏ hơn vì đã chạy song song trong batch)
+      // Delay giữa các batch
       if (i < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenDetails));
       }
@@ -319,9 +322,15 @@ class GameScraper {
       fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
 
-    // Tạo tên file từ platform name (loại bỏ ký tự đặc biệt)
-    const cleanPlatformName = this.platformName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+    // Tạo tên file từ platform name (giữ nguyên tên, chỉ thay thế ký tự không hợp lệ)
+    const cleanPlatformName = this.platformName
+      .replace(/[<>:"/\\|?*]/g, '') // Loại bỏ ký tự không hợp lệ cho file name
+      .replace(/\s+/g, ' ') // Chuẩn hóa khoảng trắng
+      .trim();
+    
     const outputFile = `${OUTPUT_DIR}/${cleanPlatformName}.csv`;
+    
+    console.log(`💾 Saving to: ${outputFile}`);
     
     // CSV header KHÔNG CÓ id, detail_url, scraped_at
     const csvHeader = "title,alternate_titles,platform,region,country,publisher,developer,release_date,players,coop,genre,esrb_rating,description\n";
@@ -345,8 +354,7 @@ class GameScraper {
       .join("\n");
 
     fs.writeFileSync(outputFile, csvHeader + csvData);
-    console.log(`💾 Game data saved to: ${outputFile}`);
-    console.log(`📝 Saved ${games.length} games with complete details`);
+    console.log(`✅ Saved ${games.length} games to: ${outputFile}`);
     
     return outputFile;
   }
@@ -367,7 +375,7 @@ class GameScraper {
     console.log(`⚡ PARALLEL MODE: ${CONFIG.concurrency} concurrent requests\n`);
     
     try {
-      // Bước 1: Chỉ lấy ID từ danh sách
+      // Bước 1: Chỉ lấy ID từ danh sách (và detect platform name)
       const gameIds = await this.scrapeGameIds(PLATFORM_ID);
       
       if (gameIds.length === 0) {
@@ -378,7 +386,7 @@ class GameScraper {
       // Bước 2: Scrape chi tiết song song
       const allGames = await this.scrapeAllGamesParallel(gameIds);
       
-      // Bước 3: Lưu dữ liệu vào CSV
+      // Bước 3: Lưu dữ liệu vào CSV với tên platform
       const outputFile = this.saveGameData(allGames);
       
       // Thống kê
