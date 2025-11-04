@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kết Quả ROM Matching</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border-left: 4px solid #3498db;
+        }
+        
+        .stat-card.ok {
+            border-left-color: #27ae60;
+        }
+        
+        .stat-card.fuzzy {
+            border-left-color: #f39c12;
+        }
+        
+        .stat-card.miss {
+            border-left-color: #e74c3c;
+        }
+        
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .controls {
+            padding: 20px 30px;
+            background: #34495e;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .search-box {
+            flex: 1;
+            min-width: 300px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        
+        .search-box input::placeholder {
+            color: rgba(255,255,255,0.7);
+        }
+        
+        .search-box input:focus {
+            outline: none;
+            border-color: #3498db;
+            background: rgba(255,255,255,0.15);
+        }
+        
+        .filters {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            background: transparent;
+            color: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .filter-btn:hover, .filter-btn.active {
+            background: #3498db;
+            border-color: #3498db;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        thead {
+            position: sticky;
+            top: 0;
+            background: #2c3e50;
+            color: white;
+        }
+        
+        th {
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.9em;
+        }
+        
+        tbody tr {
+            border-bottom: 1px solid #ecf0f1;
+            transition: background 0.3s ease;
+        }
+        
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        td {
+            padding: 12px;
+            vertical-align: top;
+        }
+        
+        .status {
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-ok {
+            background: #d5f4e6;
+            color: #27ae60;
+        }
+        
+        .status-fuzzy {
+            background: #fdebd0;
+            color: #f39c12;
+        }
+        
+        .status-miss {
+            background: #fadbd8;
+            color: #e74c3c;
+        }
+        
+        .file-name {
+            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        
+        .new-name {
+            font-family: 'Courier New', monospace;
+            color: #2980b9;
+            font-weight: 500;
+        }
+        
+        .score {
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .score-high {
+            color: #27ae60;
+        }
+        
+        .score-medium {
+            color: #f39c12;
+        }
+        
+        .score-low {
+            color: #e74c3c;
+        }
+        
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            color: #7f8c8d;
+            border-top: 1px solid #ecf0f1;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-box {
+                min-width: auto;
+            }
+            
+            th, td {
+                padding: 8px 6px;
+                font-size: 0.9em;
+            }
+            
+            .status {
+                font-size: 0.7em;
+                padding: 3px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Kết Quả ROM Matching</h1>
+            <div class="subtitle">Tổng hợp kết quả matching từ ứng dụng Copy & Rename ROM Tool</div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card ok">
+                <span class="stat-number" id="count-ok">0</span>
+                <span class="stat-label">OK (Exact Match)</span>
+            </div>
+            <div class="stat-card fuzzy">
+                <span class="stat-number" id="count-fuzzy">0</span>
+                <span class="stat-label">Fuzzy Match</span>
+            </div>
+            <div class="stat-card miss">
+                <span class="stat-number" id="count-miss">0</span>
+                <span class="stat-label">Not Found</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="count-total">0</span>
+                <span class="stat-label">Tổng số game</span>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="search-box">
+                <input type="text" id="search" placeholder="Tìm kiếm theo tên game, mô tả hoặc file...">
+            </div>
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all">Tất cả</button>
+                <button class="filter-btn" data-filter="OK">OK</button>
+                <button class="filter-btn" data-filter="FUZZY">Fuzzy</button>
+                <button class="filter-btn" data-filter="MISS">Miss</button>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table id="results-table">
+                <thead>
+                    <tr>
+                        <th>Tên Game</th>
+                        <th>Mô tả</th>
+                        <th>Trạng thái</th>
+                        <th>File gốc</th>
+                        <th>Tên mới</th>
+                        <th>Độ chính xác</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Dữ liệu sẽ được thêm ở đây bằng JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="footer">
+            <p>Được tạo tự động bởi Copy & Rename ROM Tool | 
+               <span id="generated-time"></span>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Dữ liệu từ CSV sẽ được chèn vào đây
+        const gameData = [];
+        
+        // Khởi tạo ứng dụng
+        document.addEventListener('DOMContentLoaded', function() {
+            // Cập nhật thời gian tạo
+            document.getElementById('generated-time').textContent = 
+                'Tạo lúc: ' + new Date().toLocaleString('vi-VN');
+            
+            // Xử lý tìm kiếm
+            const searchInput = document.getElementById('search');
+            searchInput.addEventListener('input', filterTable);
+            
+            // Xử lý filter buttons
+            const filterButtons = document.querySelectorAll('.filter-btn');
+            filterButtons.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    filterButtons.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    filterTable();
+                });
+            });
+            
+            // Hiển thị dữ liệu
+            displayData();
+        });
+        
+        function displayData() {
+            const tableBody = document.getElementById('table-body');
+            let okCount = 0, fuzzyCount = 0, missCount = 0;
+            
+            // Xóa nội dung cũ
+            tableBody.innerHTML = '';
+            
+            if (gameData.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="no-results">
+                            Không có dữ liệu để hiển thị. Vui lòng kiểm tra file CSV.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // Thêm dữ liệu mới
+            gameData.forEach(game => {
+                const row = document.createElement('tr');
+                
+                // Đếm số lượng theo trạng thái
+                if (game.status === 'OK') okCount++;
+                else if (game.status === 'FUZZY') fuzzyCount++;
+                else if (game.status === 'MISS') missCount++;
+                
+                // Tạo class cho score
+                let scoreClass = '';
+                if (game.score >= 0.8) scoreClass = 'score-high';
+                else if (game.score >= 0.6) scoreClass = 'score-medium';
+                else scoreClass = 'score-low';
+                
+                row.innerHTML = `
+                    <td>${escapeHtml(game.name)}</td>
+                    <td>${escapeHtml(game.description)}</td>
+                    <td><span class="status status-${game.status.toLowerCase()}">${game.status}</span></td>
+                    <td><span class="file-name">${escapeHtml(game.file_name)}</span></td>
+                    <td><span class="new-name">${escapeHtml(game.new_name)}</span></td>
+                    <td class="score ${scoreClass}">${game.score ? (game.score * 100).toFixed(1) + '%' : 'N/A'}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            // Cập nhật thống kê
+            document.getElementById('count-ok').textContent = okCount;
+            document.getElementById('count-fuzzy').textContent = fuzzyCount;
+            document.getElementById('count-miss').textContent = missCount;
+            document.getElementById('count-total').textContent = gameData.length;
+        }
+        
+        function filterTable() {
+            const searchTerm = document.getElementById('search').value.toLowerCase();
+            const activeFilter = document.querySelector('.filter-btn.active').dataset.filter;
+            const rows = document.querySelectorAll('#table-body tr');
+            
+            rows.forEach(row => {
+                const status = row.querySelector('.status').textContent;
+                const text = row.textContent.toLowerCase();
+                
+                const matchesSearch = !searchTerm || text.includes(searchTerm);
+                const matchesFilter = activeFilter === 'all' || status === activeFilter;
+                
+                row.style.display = matchesSearch && matchesFilter ? '' : 'none';
+            });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
