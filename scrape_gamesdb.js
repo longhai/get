@@ -3,7 +3,6 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const PLATFORM_ID = 7; // NES
 const OUTPUT_DIR = "data";
 
 // Config
@@ -12,18 +11,18 @@ const CONFIG = {
   delayBetweenDetails: 100,
   maxRetries: 3,
   timeout: 30000,
-  maxPages: 3, // CHỈ TEST 3 TRANG
   concurrency: 5 // Số request song song
 };
 
 class GameScraper {
-  constructor() {
+  constructor(platformId) {
     this.stats = {
       total: 0,
       success: 0,
       errors: 0
     };
-    this.platformName = "NES";
+    this.platformId = platformId;
+    this.platformName = "";
   }
 
   async fetchWithRetry(url, retries = CONFIG.maxRetries) {
@@ -52,20 +51,20 @@ class GameScraper {
     }
   }
 
-  async scrapeGameIds(platformId) {
-    console.log("📥 Scraping game IDs from list...");
+  async scrapeGameIds() {
+    console.log(`📥 Scraping game IDs for platform ${this.platformId}...`);
     let page = 1;
     let gameIds = [];
 
-    while (page <= CONFIG.maxPages) {
-      const url = `${BASE_URL}?platform_id=${platformId}&page=${page}`;
+    while (true) { // BỎ GIỚI HẠN SỐ TRANG
+      const url = `${BASE_URL}?platform_id=${this.platformId}&page=${page}`;
       console.log(`🔹 Fetching page ${page}: ${url}`);
       
       try {
         const html = await this.fetchWithRetry(url);
         const $ = cheerio.load(html);
 
-        // Lấy tên platform từ trang đầu tiên - SỬA SELECTOR
+        // Lấy tên platform từ trang đầu tiên
         if (page === 1) {
           const platformElement = $(".card-header legend");
           if (platformElement.length > 0) {
@@ -361,7 +360,7 @@ class GameScraper {
 
   printStats() {
     console.log("\n📈 ===== SCRAPING STATISTICS =====");
-    console.log(`🎮 Platform: ${this.platformName}`);
+    console.log(`🎮 Platform: ${this.platformName} (ID: ${this.platformId})`);
     console.log(`📋 Total Games: ${this.stats.total}`);
     console.log(`✅ Success: ${this.stats.success}`);
     console.log(`❌ Errors: ${this.stats.errors}`);
@@ -370,13 +369,12 @@ class GameScraper {
   }
 
   async run() {
-    console.log(`🎮 Starting GamesDB Scraper...\n`);
-    console.log(`🧪 TEST MODE: Only ${CONFIG.maxPages} pages`);
+    console.log(`🎮 Starting GamesDB Scraper for Platform ID: ${this.platformId}...\n`);
     console.log(`⚡ PARALLEL MODE: ${CONFIG.concurrency} concurrent requests\n`);
     
     try {
       // Bước 1: Chỉ lấy ID từ danh sách (và detect platform name)
-      const gameIds = await this.scrapeGameIds(PLATFORM_ID);
+      const gameIds = await this.scrapeGameIds();
       
       if (gameIds.length === 0) {
         console.log("❌ No game IDs found. Exiting.");
@@ -392,7 +390,7 @@ class GameScraper {
       // Thống kê
       this.printStats();
       
-      console.log(`🎉 All scraping completed!`);
+      console.log(`🎉 All scraping completed for ${this.platformName}!`);
       console.log(`📁 Output: ${outputFile}`);
       
     } catch (error) {
@@ -402,10 +400,27 @@ class GameScraper {
   }
 }
 
-// Chạy scraper
+// Chạy scraper cho nhiều platform
 async function main() {
-  const scraper = new GameScraper();
-  await scraper.run();
+  // Danh sách platform IDs cần scrape
+  const PLATFORMS = [
+    { id: 7, name: "NES" },
+    { id: 6, name: "Super Nintendo" }
+  ];
+
+  for (const platform of PLATFORMS) {
+    console.log(`\n🎯 ===== SCRAPING ${platform.name.toUpperCase()} (ID: ${platform.id}) =====\n`);
+    
+    const scraper = new GameScraper(platform.id);
+    await scraper.run();
+    
+    // Delay giữa các platform
+    console.log(`⏳ Waiting before next platform...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+
+  console.log(`\n🎉 ALL PLATFORMS COMPLETED!`);
+  console.log(`📁 Check the 'data' folder for CSV files.`);
 }
 
 process.on('SIGINT', () => {
