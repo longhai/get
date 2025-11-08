@@ -1,122 +1,102 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>CSV Viewer - TheGamesDB Data</title>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net@2.1.7/js/dataTables.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-dt@2.1.7/css/dataTables.dataTables.min.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xem dữ liệu CSV | GamesDB Viewer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
 <style>
-  body {
-    font-family: "Segoe UI", sans-serif;
-    background: #fafafa;
-    margin: 20px;
-  }
-  h1 { text-align: center; margin-bottom: 1em; }
-  select {
-    font-size: 16px;
-    padding: 6px 10px;
-    margin-bottom: 20px;
-  }
-  table.dataTable {
-    width: 100% !important;
-    border-collapse: collapse;
-  }
-  #loading {
-    display: none;
-    text-align: center;
-    font-style: italic;
-    color: #555;
-  }
+body { background: #f8f9fa; padding: 20px; }
+table { font-size: 14px; }
 </style>
 </head>
 <body>
-<h1>📊 TheGamesDB CSV Viewer</h1>
+<div class="container">
+  <h2 class="mb-3">📊 GamesDB CSV Viewer</h2>
+  <p class="text-muted">Tự động lấy danh sách file trong <code>/data</code> của repo.</p>
 
-<div style="text-align:center">
-  <label>Chọn nền tảng:</label>
-  <select id="csvSelect">
-    <option value="">-- Đang tải danh sách... --</option>
-  </select>
+  <div class="mb-3">
+    <label class="form-label">Chọn tệp CSV:</label>
+    <select id="csvSelect" class="form-select w-auto d-inline-block"></select>
+    <button id="loadBtn" class="btn btn-primary ms-2">Tải dữ liệu</button>
+  </div>
+
+  <div id="tableContainer" class="table-responsive mt-4"></div>
 </div>
 
-<div id="loading">⏳ Đang tải dữ liệu...</div>
-<div id="tableContainer" style="margin-top:20px;"></div>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
 
 <script>
-const REPO = "YOUR_GITHUB_USERNAME/YOUR_REPO_NAME"; // 🔧 sửa tên repo của bạn
-const DATA_PATH = "data";
+const repo = location.pathname.split('/')[1]; // Tên repo GitHub Pages
+const owner = location.hostname.split('.')[0]; // username.github.io
+const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data`;
 
 async function listCSVFiles() {
-  const url = `https://api.github.com/repos/${REPO}/contents/${DATA_PATH}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Không thể tải danh sách file CSV");
-  const files = await res.json();
-  return files.filter(f => f.name.endsWith(".csv")).map(f => f.name);
+  try {
+    const res = await fetch(apiUrl);
+    const files = await res.json();
+    const csvFiles = files.filter(f => f.name.endsWith('.csv'));
+    const select = document.getElementById('csvSelect');
+    select.innerHTML = csvFiles.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
+    if (csvFiles.length === 0) select.innerHTML = '<option disabled>Không có file CSV</option>';
+  } catch (err) {
+    alert('❌ Không thể lấy danh sách file CSV.\n' + err);
+  }
 }
 
-async function loadCSV(filename) {
-  document.getElementById("loading").style.display = "block";
-  document.getElementById("tableContainer").innerHTML = "";
-  const rawUrl = `https://raw.githubusercontent.com/${REPO}/main/${DATA_PATH}/${filename}`;
-  const response = await fetch(rawUrl);
-  const csvText = await response.text();
+async function loadCSV() {
+  const url = document.getElementById('csvSelect').value;
+  if (!url) return;
+  const container = document.getElementById('tableContainer');
+  container.innerHTML = "<p class='text-muted'>⏳ Đang tải...</p>";
+
+  const res = await fetch(url);
+  const csvText = await res.text();
 
   Papa.parse(csvText, {
     header: true,
     skipEmptyLines: true,
     complete: results => {
-      document.getElementById("loading").style.display = "none";
-      renderTable(results.data);
+      const data = results.data;
+      if (data.length === 0) {
+        container.innerHTML = "<p class='text-danger'>File CSV trống.</p>";
+        return;
+      }
+
+      const headers = Object.keys(data[0]);
+      let tableHTML = `<table id="csvTable" class="table table-striped table-bordered"><thead><tr>`;
+      headers.forEach(h => tableHTML += `<th>${h}</th>`);
+      tableHTML += `</tr></thead><tbody>`;
+
+      data.forEach(row => {
+        tableHTML += '<tr>';
+        headers.forEach(h => tableHTML += `<td>${row[h] ?? ''}</td>`);
+        tableHTML += '</tr>';
+      });
+      tableHTML += '</tbody></table>';
+      container.innerHTML = tableHTML;
+
+      new DataTable('#csvTable', {
+        pageLength: 20,
+        responsive: true,
+        order: [],
+        language: {
+          search: "Tìm kiếm:",
+          lengthMenu: "Hiển thị _MENU_ dòng",
+          info: "Hiển thị _START_ - _END_ / _TOTAL_ dòng",
+          paginate: { previous: "Trước", next: "Sau" }
+        }
+      });
     }
   });
 }
 
-function renderTable(data) {
-  const container = document.getElementById("tableContainer");
-  if (!data.length) {
-    container.innerHTML = "<p>Không có dữ liệu trong file CSV này.</p>";
-    return;
-  }
-
-  const columns = Object.keys(data[0]);
-  let html = `<table id="csvTable" class="display"><thead><tr>`;
-  columns.forEach(c => html += `<th>${c}</th>`);
-  html += "</tr></thead><tbody>";
-
-  for (const row of data) {
-    html += "<tr>" + columns.map(c => `<td>${row[c] ?? ""}</td>`).join("") + "</tr>";
-  }
-  html += "</tbody></table>";
-  container.innerHTML = html;
-
-  new DataTable("#csvTable", {
-    paging: true,
-    searching: true,
-    scrollX: true,
-    pageLength: 25,
-    language: {
-      search: "Tìm:",
-      lengthMenu: "Hiển thị _MENU_ dòng",
-      info: "Trang _PAGE_ / _PAGES_"
-    }
-  });
-}
-
-(async () => {
-  try {
-    const files = await listCSVFiles();
-    const select = document.getElementById("csvSelect");
-    select.innerHTML = `<option value="">-- Chọn file CSV --</option>` + 
-      files.map(f => `<option value="${f}">${f.replace(".csv","")}</option>`).join("");
-    select.addEventListener("change", e => {
-      if (e.target.value) loadCSV(e.target.value);
-    });
-  } catch (err) {
-    document.body.innerHTML = `<p style="color:red;text-align:center">${err.message}</p>`;
-  }
-})();
+document.getElementById('loadBtn').addEventListener('click', loadCSV);
+listCSVFiles();
 </script>
 </body>
 </html>
