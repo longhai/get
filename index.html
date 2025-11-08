@@ -9,6 +9,9 @@
 <style>
 body { background: #f8f9fa; padding: 20px; }
 table { font-size: 14px; }
+.desc-short { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; display: inline-block; vertical-align: top; }
+.desc-full { display: none; white-space: pre-wrap; }
+.toggle-btn { color: #0d6efd; cursor: pointer; font-size: 13px; user-select: none; }
 </style>
 </head>
 <body>
@@ -31,8 +34,8 @@ table { font-size: 14px; }
 <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
 
 <script>
-const repo = location.pathname.split('/')[1]; // Tên repo GitHub Pages
-const owner = location.hostname.split('.')[0]; // username.github.io
+const repo = location.pathname.split('/')[1]; // Tên repo
+const owner = location.hostname.split('.')[0]; // username
 const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data`;
 
 async function listCSVFiles() {
@@ -74,13 +77,26 @@ async function loadCSV() {
 
       data.forEach(row => {
         tableHTML += '<tr>';
-        headers.forEach(h => tableHTML += `<td>${row[h] ?? ''}</td>`);
+        headers.forEach(h => {
+          let value = row[h] ?? '';
+          if (h.toLowerCase() === 'description' && value.length > 100) {
+            const short = value.slice(0, 100).replace(/"/g, '&quot;');
+            const full = value.replace(/"/g, '&quot;');
+            value = `
+              <span class="desc-short">${short}...</span>
+              <span class="desc-full">${full}</span>
+              <span class="toggle-btn ms-1">[Xem thêm]</span>
+            `;
+          }
+          tableHTML += `<td>${value}</td>`;
+        });
         tableHTML += '</tr>';
       });
+
       tableHTML += '</tbody></table>';
       container.innerHTML = tableHTML;
 
-      new DataTable('#csvTable', {
+      const table = new DataTable('#csvTable', {
         pageLength: 20,
         responsive: true,
         order: [],
@@ -90,6 +106,18 @@ async function loadCSV() {
           info: "Hiển thị _START_ - _END_ / _TOTAL_ dòng",
           paginate: { previous: "Trước", next: "Sau" }
         }
+      });
+
+      // Toggle mô tả dài/ngắn
+      container.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          const short = e.target.parentNode.querySelector('.desc-short');
+          const full = e.target.parentNode.querySelector('.desc-full');
+          const expanded = full.style.display === 'inline';
+          full.style.display = expanded ? 'none' : 'inline';
+          short.style.display = expanded ? 'inline-block' : 'none';
+          e.target.textContent = expanded ? '[Xem thêm]' : '[Ẩn bớt]';
+        });
       });
     }
   });
