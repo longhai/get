@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const PLATFORM_IDS = [6, 7];
+const PLATFORM_IDS = [5,6, 7,10,13,18,23,24,35,36,4925,4930];
 const OUTPUT_DIR = "data";
 
 const CONFIG = {
