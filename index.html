@@ -1,118 +1,129 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CSV Viewer</title>
-<style>
-  body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-  h1 { text-align: center; }
-  select, table { width: 100%; margin-top: 10px; }
-  select { padding: 8px; font-size: 16px; }
-  table { border-collapse: collapse; background: white; margin-top: 15px; }
-  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-  th { background: #333; color: white; position: sticky; top: 0; }
-  tr:nth-child(even) { background: #f9f9f9; }
-  #status { margin-top: 10px; font-style: italic; color: #555; }
-</style>
+  <meta charset="UTF-8" />
+  <title>📊 Xem dữ liệu GamesDB CSV</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f8f9fa;
+      margin: 0;
+      padding: 20px;
+      color: #222;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    select {
+      font-size: 1rem;
+      padding: 6px 10px;
+      margin-bottom: 10px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 14px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 6px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #007bff;
+      color: white;
+      position: sticky;
+      top: 0;
+    }
+    tr:nth-child(even) {
+      background: #f2f2f2;
+    }
+    .container {
+      max-width: 95%;
+      margin: auto;
+    }
+    #loading {
+      text-align: center;
+      font-weight: bold;
+      color: #007bff;
+    }
+  </style>
 </head>
 <body>
-  <h1>📊 Xem dữ liệu CSV trong thư mục /data</h1>
-  <select id="fileSelect"></select>
-  <div id="status"></div>
-  <table id="csvTable"></table>
+  <div class="container">
+    <h1>📂 Xem nội dung CSV từ <code>/data</code></h1>
+    <p><b>Chọn file CSV:</b></p>
+    <select id="fileSelect"></select>
+    <div id="loading"></div>
+    <div id="tableContainer"></div>
+  </div>
 
-<script>
-// Hàm load danh sách file CSV trong thư mục /data
-async function loadCSVList() {
-  try {
-    // Dùng GitHub Pages / local environment → cần có liệt kê file
-    // Trường hợp chạy local: ta giả định có file index.json hoặc đọc qua API repo
-    // Đơn giản: nếu chạy local, ta fetch danh sách qua một request tới GitHub (nếu public)
-    const response = await fetch('data/');
-    const text = await response.text();
-    // Parse danh sách file CSV từ directory listing HTML
-    const files = [...text.matchAll(/href="([^"]+\.csv)"/g)].map(m => m[1]);
+  <script>
+    async function fetchCSVFiles() {
+      try {
+        const res = await fetch('./data/');
+        const text = await res.text();
 
-    const select = document.getElementById('fileSelect');
-    if (files.length === 0) {
-      select.innerHTML = `<option>Không tìm thấy file CSV nào</option>`;
-      return;
-    }
-    select.innerHTML = files.map(f => `<option value="data/${f}">${f}</option>`).join('');
-    select.onchange = () => loadCSV(select.value);
-    loadCSV(select.value); // Tự load file đầu tiên
-  } catch (err) {
-    document.getElementById('status').textContent = "⚠️ Không thể lấy danh sách file CSV (có thể do hạn chế CORS).";
-  }
-}
+        // Dò file CSV từ danh sách directory index (phải chạy qua server, ví dụ GitHub Pages)
+        const matches = [...text.matchAll(/href="([^"]+\.csv)"/g)];
+        const files = matches.map(m => m[1]);
 
-// Hàm đọc file CSV và hiển thị
-async function loadCSV(path) {
-  const status = document.getElementById('status');
-  const table = document.getElementById('csvTable');
-  table.innerHTML = "";
-  status.textContent = "⏳ Đang tải " + path + "...";
+        const select = document.getElementById('fileSelect');
+        if (files.length === 0) {
+          select.innerHTML = '<option>Không tìm thấy file CSV nào</option>';
+          return;
+        }
 
-  try {
-    const res = await fetch(path);
-    const csvText = await res.text();
-    const rows = csvText.split(/\r?\n/).filter(r => r.trim() !== "");
-    if (rows.length === 0) {
-      status.textContent = "⚠️ File rỗng.";
-      return;
-    }
+        select.innerHTML = files.map(f => `<option value="${f}">${f}</option>`).join('');
+        loadCSV(files[0]);
 
-    const headers = parseCSVLine(rows[0]);
-    const html = [
-      "<thead><tr>" + headers.map(h => `<th>${escapeHTML(h)}</th>`).join("") + "</tr></thead>",
-      "<tbody>" +
-        rows.slice(1).map(row => {
-          const cols = parseCSVLine(row);
-          return "<tr>" + headers.map((_, i) => `<td>${escapeHTML(cols[i] || "")}</td>`).join("") + "</tr>";
-        }).join("") +
-      "</tbody>"
-    ].join("");
-
-    table.innerHTML = html;
-    status.textContent = `✅ Hiển thị ${rows.length - 1} dòng từ ${path}`;
-  } catch (err) {
-    status.textContent = "❌ Lỗi tải file: " + err.message;
-  }
-}
-
-// Hàm tách CSV (có hỗ trợ dấu ngoặc kép)
-function parseCSVLine(line) {
-  const result = [];
-  let current = '', insideQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') {
-      if (insideQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        insideQuotes = !insideQuotes;
+        select.addEventListener('change', e => loadCSV(e.target.value));
+      } catch (err) {
+        document.getElementById('tableContainer').innerHTML = "<p style='color:red'>❌ Không thể tải danh sách file (cần server hoặc GitHub Pages)</p>";
       }
-    } else if (c === ',' && !insideQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += c;
     }
-  }
-  result.push(current);
-  return result;
-}
 
-// Chống XSS
-function escapeHTML(str) {
-  return str.replace(/[&<>"']/g, m => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-  }[m]));
-}
+    async function loadCSV(filename) {
+      document.getElementById('loading').textContent = "Đang tải " + filename + "...";
+      document.getElementById('tableContainer').innerHTML = "";
 
-loadCSVList();
-</script>
+      try {
+        const res = await fetch('./data/' + filename);
+        const csv = await res.text();
+        renderCSV(csv);
+        document.getElementById('loading').textContent = "";
+      } catch (err) {
+        document.getElementById('loading').textContent = "❌ Không thể tải file CSV!";
+      }
+    }
+
+    function renderCSV(csv) {
+      const lines = csv.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length === 0) return;
+
+      const headers = parseCSVLine(lines[0]);
+      const rows = lines.slice(1).map(parseCSVLine);
+
+      let html = '<table><thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+      rows.forEach(r => {
+        html += '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>';
+      });
+      html += '</tbody></table>';
+
+      document.getElementById('tableContainer').innerHTML = html;
+    }
+
+    function parseCSVLine(line) {
+      const pattern = /("(?:[^"]|"")*"|[^,]*)/g;
+      return [...line.matchAll(pattern)]
+        .map(m => m[0].replace(/^"|"$/g, '').replace(/""/g, '"').trim())
+        .filter((_, i, arr) => !(arr.length === 1 && arr[0] === ""));
+    }
+
+    fetchCSVFiles();
+  </script>
 </body>
 </html>
