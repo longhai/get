@@ -1,626 +1,118 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Viewer - CSV Files</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-        }
-        .card {
-            border: none;
-            border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease;
-            margin-bottom: 1.5rem;
-        }
-        .card:hover {
-            transform: translateY(-5px);
-        }
-        .table-container {
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        .csv-table {
-            font-size: 0.9rem;
-        }
-        .csv-table th {
-            background-color: #667eea;
-            color: white;
-            position: sticky;
-            top: 0;
-        }
-        .file-info {
-            background-color: #e9ecef;
-            border-radius: 10px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .loading {
-            text-align: center;
-            padding: 2rem;
-        }
-        .stats-card {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-        }
-        .search-box {
-            max-width: 400px;
-        }
-        .pagination {
-            justify-content: center;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSV Viewer</title>
+<style>
+  body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+  h1 { text-align: center; }
+  select, table { width: 100%; margin-top: 10px; }
+  select { padding: 8px; font-size: 16px; }
+  table { border-collapse: collapse; background: white; margin-top: 15px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #333; color: white; position: sticky; top: 0; }
+  tr:nth-child(even) { background: #f9f9f9; }
+  #status { margin-top: 10px; font-style: italic; color: #555; }
+</style>
 </head>
 <body>
-    <!-- Header -->
-    <div class="header">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <h1><i class="fas fa-database me-3"></i>CSV Data Viewer</h1>
-                    <p class="lead mb-0">Tự động hiển thị dữ liệu từ các file CSV trong thư mục data</p>
-                </div>
-                <div class="col-md-4 text-end">
-                    <div class="input-group search-box">
-                        <input type="text" id="searchInput" class="form-control" placeholder="Tìm kiếm...">
-                        <button class="btn btn-light" type="button" id="searchBtn">
-                            <i class="fas fa-search"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+  <h1>📊 Xem dữ liệu CSV trong thư mục /data</h1>
+  <select id="fileSelect"></select>
+  <div id="status"></div>
+  <table id="csvTable"></table>
 
-    <div class="container">
-        <!-- Statistics Cards -->
-        <div class="row mb-4" id="statsContainer">
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <div class="card-body text-center">
-                        <h3><i class="fas fa-file-csv"></i></h3>
-                        <h4 id="totalFiles">0</h4>
-                        <p class="mb-0">Tổng số file CSV</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <div class="card-body text-center">
-                        <h3><i class="fas fa-table"></i></h3>
-                        <h4 id="totalRows">0</h4>
-                        <p class="mb-0">Tổng số dòng dữ liệu</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <div class="card-body text-center">
-                        <h3><i class="fas fa-columns"></i></h3>
-                        <h4 id="totalColumns">0</h4>
-                        <p class="mb-0">Tổng số cột</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <div class="card-body text-center">
-                        <h3><i class="fas fa-clock"></i></h3>
-                        <h4 id="lastUpdate">-</h4>
-                        <p class="mb-0">Cập nhật cuối</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+<script>
+// Hàm load danh sách file CSV trong thư mục /data
+async function loadCSVList() {
+  try {
+    // Dùng GitHub Pages / local environment → cần có liệt kê file
+    // Trường hợp chạy local: ta giả định có file index.json hoặc đọc qua API repo
+    // Đơn giản: nếu chạy local, ta fetch danh sách qua một request tới GitHub (nếu public)
+    const response = await fetch('data/');
+    const text = await response.text();
+    // Parse danh sách file CSV từ directory listing HTML
+    const files = [...text.matchAll(/href="([^"]+\.csv)"/g)].map(m => m[1]);
 
-        <!-- File Selection -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="fas fa-list me-2"></i>Danh sách file CSV</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row" id="fileList">
-                            <!-- File list will be populated by JavaScript -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    const select = document.getElementById('fileSelect');
+    if (files.length === 0) {
+      select.innerHTML = `<option>Không tìm thấy file CSV nào</option>`;
+      return;
+    }
+    select.innerHTML = files.map(f => `<option value="data/${f}">${f}</option>`).join('');
+    select.onchange = () => loadCSV(select.value);
+    loadCSV(select.value); // Tự load file đầu tiên
+  } catch (err) {
+    document.getElementById('status').textContent = "⚠️ Không thể lấy danh sách file CSV (có thể do hạn chế CORS).";
+  }
+}
 
-        <!-- Data Display -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="fas fa-table me-2"></i>Dữ liệu CSV</h5>
-                        <div>
-                            <button class="btn btn-light btn-sm me-2" id="exportBtn">
-                                <i class="fas fa-download me-1"></i>Xuất CSV
-                            </button>
-                            <button class="btn btn-light btn-sm" id="refreshBtn">
-                                <i class="fas fa-sync-alt me-1"></i>Làm mới
-                            </button>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div id="fileInfo" class="file-info">
-                            <p class="mb-1"><strong>Chọn một file CSV từ danh sách trên để xem dữ liệu</strong></p>
-                        </div>
-                        
-                        <div class="table-container">
-                            <table class="table table-striped table-bordered csv-table" id="dataTable">
-                                <thead>
-                                    <!-- Table headers will be populated by JavaScript -->
-                                </thead>
-                                <tbody>
-                                    <!-- Table data will be populated by JavaScript -->
-                                </tbody>
-                            </table>
-                        </div>
+// Hàm đọc file CSV và hiển thị
+async function loadCSV(path) {
+  const status = document.getElementById('status');
+  const table = document.getElementById('csvTable');
+  table.innerHTML = "";
+  status.textContent = "⏳ Đang tải " + path + "...";
 
-                        <!-- Pagination -->
-                        <nav aria-label="Page navigation">
-                            <ul class="pagination mt-3" id="pagination">
-                                <!-- Pagination will be populated by JavaScript -->
-                            </ul>
-                        </nav>
-                    </div>
-                </div>
-            </div>
-        </div>
+  try {
+    const res = await fetch(path);
+    const csvText = await res.text();
+    const rows = csvText.split(/\r?\n/).filter(r => r.trim() !== "");
+    if (rows.length === 0) {
+      status.textContent = "⚠️ File rỗng.";
+      return;
+    }
 
-        <!-- Loading Spinner -->
-        <div class="row mt-4">
-            <div class="col-12">
-                <div class="loading" id="loadingSpinner" style="display: none;">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Đang tải...</span>
-                    </div>
-                    <p class="mt-2">Đang tải dữ liệu...</p>
-                </div>
-            </div>
-        </div>
-    </div>
+    const headers = parseCSVLine(rows[0]);
+    const html = [
+      "<thead><tr>" + headers.map(h => `<th>${escapeHTML(h)}</th>`).join("") + "</tr></thead>",
+      "<tbody>" +
+        rows.slice(1).map(row => {
+          const cols = parseCSVLine(row);
+          return "<tr>" + headers.map((_, i) => `<td>${escapeHTML(cols[i] || "")}</td>`).join("") + "</tr>";
+        }).join("") +
+      "</tbody>"
+    ].join("");
 
-    <footer class="bg-dark text-white text-center py-3 mt-5">
-        <div class="container">
-            <p class="mb-0">CSV Data Viewer &copy; 2024 - Tự động quét thư mục data</p>
-        </div>
-    </footer>
+    table.innerHTML = html;
+    status.textContent = `✅ Hiển thị ${rows.length - 1} dòng từ ${path}`;
+  } catch (err) {
+    status.textContent = "❌ Lỗi tải file: " + err.message;
+  }
+}
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-    <script>
-        class CSVDataViewer {
-            constructor() {
-                this.csvFiles = [];
-                this.currentData = [];
-                this.currentFile = null;
-                this.currentPage = 1;
-                this.rowsPerPage = 50;
-                this.searchTerm = '';
-                
-                this.initializeEventListeners();
-                this.loadCSVFiles();
-            }
+// Hàm tách CSV (có hỗ trợ dấu ngoặc kép)
+function parseCSVLine(line) {
+  const result = [];
+  let current = '', insideQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (insideQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (c === ',' && !insideQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += c;
+    }
+  }
+  result.push(current);
+  return result;
+}
 
-            initializeEventListeners() {
-                document.getElementById('searchBtn').addEventListener('click', () => this.handleSearch());
-                document.getElementById('searchInput').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') this.handleSearch();
-                });
-                document.getElementById('exportBtn').addEventListener('click', () => this.exportCSV());
-                document.getElementById('refreshBtn').addEventListener('click', () => this.refreshData());
-            }
+// Chống XSS
+function escapeHTML(str) {
+  return str.replace(/[&<>"']/g, m => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[m]));
+}
 
-            async loadCSVFiles() {
-                try {
-                    this.showLoading(true);
-                    
-                    // Giả lập việc lấy danh sách file CSV từ thư mục data
-                    // Trong thực tế, bạn sẽ thay thế bằng API call đến server
-                    const response = await this.fetchCSVFiles();
-                    this.csvFiles = response.files;
-                    
-                    this.renderFileList();
-                    this.updateStatistics();
-                    this.showLoading(false);
-                    
-                } catch (error) {
-                    console.error('Lỗi khi tải danh sách file:', error);
-                    this.showError('Không thể tải danh sách file CSV');
-                    this.showLoading(false);
-                }
-            }
-
-            async fetchCSVFiles() {
-                // Giả lập API call - trong thực tế, thay thế bằng endpoint thật
-                return new Promise((resolve) => {
-                    setTimeout(() => {
-                        // Giả lập dữ liệu - thay thế bằng API call thực tế
-                        resolve({
-                            files: [
-                                { name: 'games.csv', size: '245 KB', rows: 1250, columns: 8, lastModified: '2024-01-15 14:30:25' },
-                                { name: 'users.csv', size: '89 KB', rows: 450, columns: 6, lastModified: '2024-01-15 10:15:40' },
-                                { name: 'sales.csv', size: '156 KB', rows: 780, columns: 7, lastModified: '2024-01-14 16:45:12' },
-                                { name: 'products.csv', size: '67 KB', rows: 320, columns: 5, lastModified: '2024-01-14 09:20:33' },
-                                { name: 'categories.csv', size: '23 KB', rows: 45, columns: 3, lastModified: '2024-01-13 11:05:27' }
-                            ]
-                        });
-                    }, 1000);
-                });
-            }
-
-            renderFileList() {
-                const fileListContainer = document.getElementById('fileList');
-                fileListContainer.innerHTML = '';
-
-                this.csvFiles.forEach((file, index) => {
-                    const fileCard = this.createFileCard(file, index);
-                    fileListContainer.appendChild(fileCard);
-                });
-            }
-
-            createFileCard(file, index) {
-                const col = document.createElement('div');
-                col.className = 'col-md-4 mb-3';
-                
-                col.innerHTML = `
-                    <div class="card file-card h-100" data-filename="${file.name}">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h6 class="card-title mb-0">
-                                    <i class="fas fa-file-csv text-primary me-2"></i>${file.name}
-                                </h6>
-                                <span class="badge bg-info">${file.size}</span>
-                            </div>
-                            <div class="file-details">
-                                <small class="text-muted">
-                                    <i class="fas fa-table me-1"></i>${file.rows} dòng × ${file.columns} cột<br>
-                                    <i class="fas fa-clock me-1"></i>Cập nhật: ${file.lastModified}
-                                </small>
-                            </div>
-                        </div>
-                        <div class="card-footer bg-transparent">
-                            <button class="btn btn-primary btn-sm w-100 load-file-btn">
-                                <i class="fas fa-eye me-1"></i>Xem dữ liệu
-                            </button>
-                        </div>
-                    </div>
-                `;
-
-                // Thêm event listener cho nút xem dữ liệu
-                col.querySelector('.load-file-btn').addEventListener('click', () => {
-                    this.loadFileData(file.name);
-                });
-
-                return col;
-            }
-
-            async loadFileData(filename) {
-                try {
-                    this.showLoading(true);
-                    this.currentFile = filename;
-                    
-                    // Giả lập việc tải dữ liệu CSV
-                    // Trong thực tế, thay thế bằng API call đến server
-                    const data = await this.fetchCSVData(filename);
-                    this.currentData = data;
-                    
-                    this.renderFileInfo(filename);
-                    this.renderTable();
-                    this.showLoading(false);
-                    
-                } catch (error) {
-                    console.error('Lỗi khi tải dữ liệu file:', error);
-                    this.showError('Không thể tải dữ liệu từ file ' + filename);
-                    this.showLoading(false);
-                }
-            }
-
-            async fetchCSVData(filename) {
-                // Giả lập API call - trong thực tế, thay thế bằng endpoint thật
-                return new Promise((resolve) => {
-                    setTimeout(() => {
-                        // Tạo dữ liệu mẫu dựa trên tên file
-                        let data = [];
-                        const headers = this.generateHeaders(filename);
-                        
-                        // Tạo dữ liệu mẫu (100 dòng)
-                        for (let i = 1; i <= 100; i++) {
-                            let row = { id: i };
-                            headers.forEach(header => {
-                                if (header !== 'id') {
-                                    row[header] = this.generateSampleData(header, i);
-                                }
-                            });
-                            data.push(row);
-                        }
-                        
-                        resolve(data);
-                    }, 1500);
-                });
-            }
-
-            generateHeaders(filename) {
-                // Tạo headers dựa trên tên file
-                const headerMap = {
-                    'games.csv': ['id', 'name', 'genre', 'platform', 'release_date', 'price', 'rating', 'developer'],
-                    'users.csv': ['id', 'username', 'email', 'country', 'registration_date', 'status'],
-                    'sales.csv': ['id', 'product_id', 'customer_id', 'sale_date', 'quantity', 'amount', 'payment_method'],
-                    'products.csv': ['id', 'product_name', 'category', 'price', 'stock'],
-                    'categories.csv': ['id', 'category_name', 'description']
-                };
-                
-                return headerMap[filename] || ['id', 'column1', 'column2', 'column3'];
-            }
-
-            generateSampleData(header, index) {
-                // Tạo dữ liệu mẫu dựa trên tên cột
-                const dataGenerators = {
-                    'name': () => `Item ${index}`,
-                    'genre': () => ['Action', 'RPG', 'Strategy', 'Sports', 'Puzzle'][index % 5],
-                    'platform': () => ['PC', 'PlayStation', 'Xbox', 'Nintendo', 'Mobile'][index % 5],
-                    'release_date': () => `202${index % 4}-${(index % 12) + 1}-${(index % 28) + 1}`,
-                    'price': () => (Math.random() * 100).toFixed(2),
-                    'rating': () => (Math.random() * 5 + 1).toFixed(1),
-                    'developer': () => `Developer ${String.fromCharCode(65 + (index % 26))}`,
-                    'username': () => `user${index}`,
-                    'email': () => `user${index}@example.com`,
-                    'country': () => ['Vietnam', 'USA', 'Japan', 'Korea', 'UK'][index % 5],
-                    'registration_date': () => `202${index % 4}-${(index % 12) + 1}-${(index % 28) + 1}`,
-                    'status': () => ['Active', 'Inactive', 'Pending'][index % 3],
-                    'product_name': () => `Product ${index}`,
-                    'category': () => ['Electronics', 'Books', 'Clothing', 'Food', 'Toys'][index % 5],
-                    'stock': () => Math.floor(Math.random() * 1000),
-                    'category_name': () => `Category ${index}`,
-                    'description': () => `Description for category ${index}`,
-                    'sale_date': () => `202${index % 4}-${(index % 12) + 1}-${(index % 28) + 1}`,
-                    'quantity': () => Math.floor(Math.random() * 10) + 1,
-                    'amount': () => (Math.random() * 500).toFixed(2),
-                    'payment_method': () => ['Credit Card', 'PayPal', 'Cash', 'Bank Transfer'][index % 4]
-                };
-                
-                return dataGenerators[header] ? dataGenerators[header]() : `Data ${index}`;
-            }
-
-            renderFileInfo(filename) {
-                const fileInfo = document.getElementById('fileInfo');
-                const file = this.csvFiles.find(f => f.name === filename);
-                
-                if (file) {
-                    fileInfo.innerHTML = `
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6><i class="fas fa-file-csv me-2"></i>${file.name}</h6>
-                                <p class="mb-1"><strong>Kích thước:</strong> ${file.size}</p>
-                                <p class="mb-1"><strong>Số dòng:</strong> ${file.rows}</p>
-                                <p class="mb-0"><strong>Số cột:</strong> ${file.columns}</p>
-                            </div>
-                            <div class="col-md-6">
-                                <p class="mb-1"><strong>Cập nhật cuối:</strong> ${file.lastModified}</p>
-                                <p class="mb-1"><strong>Đang hiển thị:</strong> <span id="displayInfo">0-0 của 0</span></p>
-                                <p class="mb-0"><strong>Tìm kiếm:</strong> <span id="searchInfo">Không có</span></p>
-                            </div>
-                        </div>
-                    `;
-                }
-            }
-
-            renderTable() {
-                const table = document.getElementById('dataTable');
-                const tbody = table.querySelector('tbody');
-                const thead = table.querySelector('thead');
-                
-                // Xóa dữ liệu cũ
-                thead.innerHTML = '';
-                tbody.innerHTML = '';
-                
-                if (this.currentData.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="100" class="text-center">Không có dữ liệu</td></tr>';
-                    return;
-                }
-                
-                // Lấy headers từ dữ liệu đầu tiên
-                const headers = Object.keys(this.currentData[0]);
-                
-                // Tạo header row
-                const headerRow = document.createElement('tr');
-                headers.forEach(header => {
-                    const th = document.createElement('th');
-                    th.textContent = this.capitalizeFirstLetter(header.replace('_', ' '));
-                    th.style.cursor = 'pointer';
-                    th.addEventListener('click', () => this.sortTable(header));
-                    headerRow.appendChild(th);
-                });
-                thead.appendChild(headerRow);
-                
-                // Lọc dữ liệu nếu có search term
-                let filteredData = this.currentData;
-                if (this.searchTerm) {
-                    filteredData = this.currentData.filter(row => 
-                        Object.values(row).some(value => 
-                            value.toString().toLowerCase().includes(this.searchTerm.toLowerCase())
-                        )
-                    );
-                }
-                
-                // Phân trang
-                const startIndex = (this.currentPage - 1) * this.rowsPerPage;
-                const endIndex = startIndex + this.rowsPerPage;
-                const paginatedData = filteredData.slice(startIndex, endIndex);
-                
-                // Tạo rows
-                paginatedData.forEach(row => {
-                    const tr = document.createElement('tr');
-                    headers.forEach(header => {
-                        const td = document.createElement('td');
-                        td.textContent = row[header];
-                        tr.appendChild(td);
-                    });
-                    tbody.appendChild(tr);
-                });
-                
-                // Cập nhật thông tin hiển thị
-                this.updateDisplayInfo(filteredData.length);
-                
-                // Tạo phân trang
-                this.renderPagination(filteredData.length);
-            }
-
-            updateDisplayInfo(totalRows) {
-                const displayInfo = document.getElementById('displayInfo');
-                const searchInfo = document.getElementById('searchInfo');
-                
-                const startIndex = (this.currentPage - 1) * this.rowsPerPage + 1;
-                const endIndex = Math.min(startIndex + this.rowsPerPage - 1, totalRows);
-                
-                if (displayInfo) {
-                    displayInfo.textContent = `${startIndex}-${endIndex} của ${totalRows}`;
-                }
-                
-                if (searchInfo) {
-                    searchInfo.textContent = this.searchTerm ? `"${this.searchTerm}" (${totalRows} kết quả)` : 'Không có';
-                }
-            }
-
-            renderPagination(totalRows) {
-                const pagination = document.getElementById('pagination');
-                pagination.innerHTML = '';
-                
-                const totalPages = Math.ceil(totalRows / this.rowsPerPage);
-                
-                if (totalPages <= 1) return;
-                
-                // Nút Previous
-                const prevLi = document.createElement('li');
-                prevLi.className = `page-item ${this.currentPage === 1 ? 'disabled' : ''}`;
-                prevLi.innerHTML = `<a class="page-link" href="#">Previous</a>`;
-                prevLi.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (this.currentPage > 1) {
-                        this.currentPage--;
-                        this.renderTable();
-                    }
-                });
-                pagination.appendChild(prevLi);
-                
-                // Các nút trang
-                for (let i = 1; i <= totalPages; i++) {
-                    const li = document.createElement('li');
-                    li.className = `page-item ${i === this.currentPage ? 'active' : ''}`;
-                    li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
-                    li.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        this.currentPage = i;
-                        this.renderTable();
-                    });
-                    pagination.appendChild(li);
-                }
-                
-                // Nút Next
-                const nextLi = document.createElement('li');
-                nextLi.className = `page-item ${this.currentPage === totalPages ? 'disabled' : ''}`;
-                nextLi.innerHTML = `<a class="page-link" href="#">Next</a>`;
-                nextLi.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (this.currentPage < totalPages) {
-                        this.currentPage++;
-                        this.renderTable();
-                    }
-                });
-                pagination.appendChild(nextLi);
-            }
-
-            handleSearch() {
-                this.searchTerm = document.getElementById('searchInput').value;
-                this.currentPage = 1;
-                this.renderTable();
-            }
-
-            sortTable(column) {
-                this.currentData.sort((a, b) => {
-                    if (a[column] < b[column]) return -1;
-                    if (a[column] > b[column]) return 1;
-                    return 0;
-                });
-                this.renderTable();
-            }
-
-            exportCSV() {
-                if (this.currentData.length === 0) {
-                    alert('Không có dữ liệu để xuất');
-                    return;
-                }
-                
-                const headers = Object.keys(this.currentData[0]);
-                const csvContent = [
-                    headers.join(','),
-                    ...this.currentData.map(row => 
-                        headers.map(header => 
-                            `"${row[header]}"`
-                        ).join(',')
-                    )
-                ].join('\n');
-                
-                const blob = new Blob([csvContent], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${this.currentFile || 'data'}_export.csv`;
-                a.click();
-                window.URL.revokeObjectURL(url);
-            }
-
-            refreshData() {
-                if (this.currentFile) {
-                    this.loadFileData(this.currentFile);
-                } else {
-                    this.loadCSVFiles();
-                }
-            }
-
-            updateStatistics() {
-                document.getElementById('totalFiles').textContent = this.csvFiles.length;
-                
-                const totalRows = this.csvFiles.reduce((sum, file) => sum + file.rows, 0);
-                const totalColumns = this.csvFiles.reduce((sum, file) => sum + file.columns, 0);
-                
-                document.getElementById('totalRows').textContent = totalRows.toLocaleString();
-                document.getElementById('totalColumns').textContent = totalColumns.toLocaleString();
-                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-            }
-
-            showLoading(show) {
-                document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
-            }
-
-            showError(message) {
-                alert(message); // Có thể thay thế bằng toast notification đẹp hơn
-            }
-
-            capitalizeFirstLetter(string) {
-                return string.charAt(0).toUpperCase() + string.slice(1);
-            }
-        }
-
-        // Khởi tạo ứng dụng khi trang được tải
-        document.addEventListener('DOMContentLoaded', () => {
-            new CSVDataViewer();
-        });
-    </script>
+loadCSVList();
+</script>
 </body>
 </html>
