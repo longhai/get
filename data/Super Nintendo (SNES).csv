@@ -8104,3 +8104,90 @@ Enjoy!"
 In this platformer, you can run, jump, climb walls and shoot the enemies. In the levels are also some power-ups for Zool. There are life-spending hearts, smart bombs, shields, more powerful jump-skill and a twin Zool. This ""twin"" makes all your motions a few seconds after you do.
 
 In the options you can change the difficulty and the game-speed two times, the continues and the background music (Rock or Funk)."
+"Blaster Master","","NTSC-U","United States of America","SUNSOFT","","2024-08-17","1","No","Action | Adventure | Platform","Not Rated","1:1 port of the NES version of Blaster Master, running on the SNES. It is utilizing FastROM/HiROM.
+
+This has been tested in Mesen2, MiSTer, on original hardware via FxPak Pro, as well as a physical cart using a MouseBite Labs board.
+
+Additional Features
+--------------------
+The ""X"" button will act as if you pressed both Down and Y, which will fire your selected special weapon while in the tank.
+The ""R"" button will mirror the NES ""A"" button (the SNES B button), which shoots grenades and jumps.  This allows you to hold R to strafe in the overhead levels.
+The ""L"" button will temporarily disable Wall.2 for the purposes of climbing down the corner of a wall.  This allows you to more easily jump off ledges rather than accidently clinging to the wall and falling to your death.
+
+Additionally, the following Quality of Life options are available:
+1. Choice of two palettes, the default Mesen2 NES palette, or the default FCEUX palette
+2. Turn on hover recharge while idle - this will slowly fill your hover gauge as long as you're on the ground not moving.
+3. Gun Degrade - FULL (1 bar lost per hit), or 1/4 (lose at 1/4 the rate, although the first hit will drop you down a level)
+4. Continues - either unlimited or the original limit of 4
+5. Lives - either unlimited or the original limit of 3
+6. Saving - The game will automatically save periodically, including when you reach a new area or pick up a key item.  You can choose to load this save when you start the game, which will start you at the beginning of the area you were in, with your items, lives, continues, and sub weapon counts in tact.  You can also choose to change any of the QoL options when you load your save."
+"Blaster Master (MSU1)","","NTSC-U","United States of America","SUNSOFT","","2024-08-17","1","No","Action | Adventure | Platform","Not Rated","1:1 port of the NES version of Blaster Master, running on the SNES. It is utilizing FastROM/HiROM.
+
+This has been tested in Mesen2, MiSTer, on original hardware via FxPak Pro, as well as a physical cart using a MouseBite Labs board.
+
+Additional Features
+--------------------
+MSU-1 Audio music is supported.  If your platform supports MSU-1 Audio, there is an included pack available.
+
+You can press SELECT on the options screen to preview all the MSU-1 tracks and individually turn them off, if you prefer the 2A03 music.
+
+The ""X"" button will act as if you pressed both Down and Y, which will fire your selected special weapon while in the tank.
+The ""R"" button will mirror the NES ""A"" button (the SNES B button), which shoots grenades and jumps.  This allows you to hold R to strafe in the overhead levels.
+The ""L"" button will temporarily disable Wall.2 for the purposes of climbing down the corner of a wall.  This allows you to more easily jump off ledges rather than accidently clinging to the wall and falling to your death.
+
+Additionally, the following Quality of Life options are available:
+1. Choice of two palettes, the default Mesen2 NES palette, or the default FCEUX palette
+2. Turn on hover recharge while idle - this will slowly fill your hover gauge as long as you're on the ground not moving.
+3. Gun Degrade - FULL (1 bar lost per hit), or 1/4 (lose at 1/4 the rate, although the first hit will drop you down a level)
+4. Continues - either unlimited or the original limit of 4
+5. Lives - either unlimited or the original limit of 3
+6. Saving - The game will automatically save periodically, including when you reach a new area or pick up a key item.  You can choose to load this save when you start the game, which will start you at the beginning of the area you were in, with your items, lives, continues, and sub weapon counts in tact.  You can also choose to change any of the QoL options when you load your save."
+"Contra (MSU1)","Probotector | Gryzor","NTSC-U","United States of America","Konami","infidelity","2025-10-12","2","Yes","Shooter | Platform","Not Rated","infidelity's port of Contra, from Famicom to SNES
+
+Includes MSU-1"
+"Disney's Chip n' Dale: Rescue Rangers","Chip 'n Dale: Rescue Rangers","NTSC","United States of America","Capcom","","2024-04-10","2","Yes","Action | Platform","Not Rated","This is a 1:1 port of the NES version of Chip 'n Dale Rescue Rangers, running on the SNES. It is utilizing FastROM/HiROM, and is 3MB in size.
+
+This has been tested in Mesen2, bsnes-accurate and on original hardware via SD2Snes."
+"Disney's Chip n' Dale: Rescue Rangers (MSU1)","Chip 'n Dale: Rescue Rangers","NTSC-U","United States of America","Capcom","","2024-04-10","2","Yes","Action | Platform","Not Rated","This is a 1:1 port of the NES version of Chip 'n Dale Rescue Rangers, running on the SNES. It is utilizing FastROM/HiROM, and is 3MB in size.
+
+This has been tested in Mesen2, bsnes-accurate and on original hardware via SD2Snes.
+
+This port supports MSU-1 for audio tracks."
+"DuckTales (MSU1)","","NTSC-U","United States of America","Capcom","infidelity","2025-10-12","1","No","Action | Platform","Not Rated","infidelity's port of DuckTales, from NES to SNES
+
+Includes MSU-1 support"
+"Hanjuku Eiyuu: Aa, Sekaiyo Hanjukunare...!!","Hanjuku Hero: Aa, Sekaiyo Hanjukunare...!","NTSC-J","Japan","Squaresoft","Squaresoft","1992-12-19","1","No","Role-Playing","Not Rated","Hanjuku Hero: Aa, Sekaiyo Hanjukunare...! (半熟英雄 ああ、世界よ半熟なれ…!! ""Let the world become soft-boiled!"") is the second game in the series. The Egg Monsters featured in the game are parodies of Final Fantasy IV characters."
+"Life Force","Salamander","NTSC-U","United States of America","Konami","","2025-06-21","1","No","Shooter | Unofficial","Not Rated","This is a 1:1 port of the NES version of Life Force, running on the SNES. It is utilizing FastROM/HiROM.
+
+This has been tested in Mesen2, MiSTer, on original hardware via FxPak Pro, as well as a physical cart using a MouseBite Labs board.
+
+NES sytle music is provided via Memblers 2A03 Emulator
+
+Additionally, the following Quality of Life options are available:
+1. Set lives to values from 3 to 99
+2. Set the difficulty from easy, medium and hard without having to loop the game
+3. 8 different palettes to choose from.  you can select it on the intro options, or while paused you can press SELECT to cylce through them."
+"Life Force (MSU1)","Salamander","NTSC-U","United States of America","Konami","","2025-06-21","1","No","Shooter | Unofficial","Not Rated","This is a 1:1 port of the NES version of Life Force, running on the SNES. It is utilizing FastROM/HiROM.
+
+This has been tested in Mesen2, MiSTer, on original hardware via FxPak Pro, as well as a physical cart using a MouseBite Labs board.
+
+NES sytle music is provided via Memblers 2A03 Emulator
+
+## Additional Features
+
+MSU-1 Audio music is supported.  If your platform supports MSU-1 Audio, there are 5 included packs available.
+
+Additionally, the following Quality of Life options are available:
+1. Set lives to values from 3 to 99
+2. Set the difficulty from easy, medium and hard without having to loop the game
+3. 8 different palettes to choose from.  you can select it on the intro options, or while paused you can press SELECT to cylce through them."
+"Shounin yo, Taishi o Dake!!","Shounin yo, Taishi o Idake!!","Region Not Set","","Bandai Co., Ltd.","AIM","1995-12-15","1","No","Action","Not Rated","Shounin yo, Taishi o Idake!! (""Merchants, Be Ambitious!!!"") is a 1995 Japan-exclusive board video game for the Super Famicom."
+"Super Mario Bros.","","NTSC-U","United States of America","","infidelity","2025-10-12","2","No","Action | Platform","Not Rated","infidelity's port of Super Mario Bros. from NES to SNES"
+"The Legend of Zelda: A Link to the Past Randomizer","Zelda: A Link to the Past Randomizer | A Link to the Past Randomizer | ALTTPR | alttpr - NoGlitches-open-ganon","NTSC-J","Japan","","","2015-01-01","1","No","Action | Adventure","E - Everyone","A type of rom-hack of the original SNES game: The Legend of Zelda: A Link to the Past
+
+Each playthrough shuffles the location of all the important items in the game. Will you find the Bow atop Death Mountain, the Fire Rod resting silently in the library, or even the Master Sword itself waiting in a chicken coop?"
+"Zool: Ninja of the ""Nth"" Dimension","Zool: Ninja of the 'Nth' Dimension | Zool no Yume Bouken","NTSC","United States of America","GameTek, Inc.","Gremlin","1994-01-01","1","No","Action | Platform","E - Everyone","His name is Zool. He is a Ninja in the 2345th dimension, 6 worlds each with 3 stages. 
+
+In this platformer, you can run, jump, climb walls and shoot the enemies. In the levels are also some power-ups for Zool. There are life-spending hearts, smart bombs, shields, more powerful jump-skill and a twin Zool. This ""twin"" makes all your motions a few seconds after you do.
+
+In the options you can change the difficulty and the game-speed two times, the continues and the background music (Rock or Funk)."
