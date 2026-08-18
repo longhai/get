@@ -3,7 +3,7 @@ name: Scrape GamesDB
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * 0'  # Chủ nhật hàng tuần lúc 3AM
+    - cron: '0 3 1 * *'  # Ngày mùng 1 hàng tháng lúc 3AM
 
 jobs:
   scrape:
