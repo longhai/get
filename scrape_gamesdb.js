@@ -3,38 +3,75 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const PLATFORM_IDS = [
-  5,    // Game Boy Advance
-  6,    // SNES
-  7,    // NES
-  10,   // PlayStation
-  13,   // PSP
-  18,   // Genesis
-  23,   // Arcade
-  24,   // Neo Geo
-  35,   // Master System
-  36,   // Mega Drive
+const ALL_PLATFORM_IDS = [
+  // --- 🕹️ ARCADE & MÁY THÙNG ---
+  23,   // Arcade (MAME / FBA / CPS1,2,3)
+  24,   // SNES / SNK Neo Geo AES/MVS
+  4917, // Sammy Atomiswave
+  4918, // Sega NAOMI
+  4919, // Sega NAOMI 2
 
-  2,    // GameCube
+  // --- 🍄 NINTENDO CONSOLE & HANDHELD ---
+  7,    // NES / Famicom
+  6,    // SNES / Super Famicom
   3,    // Nintendo 64
-  4,    // Game Boy
-  8,    // Nintendo DS
+  2,    // GameCube
   9,    // Wii
-  11,   // PlayStation 2
-  16,   // Dreamcast
-  17,   // Saturn
+  38,   // Wii U
+  4970, // Nintendo Switch
+  4,    // Game Boy
+  41,   // Game Boy Color
+  5,    // Game Boy Advance
+  8,    // Nintendo DS
+  4971, // Nintendo 3DS
+  4922, // Virtual Boy
+
+  // --- 🌀 SEGA CONSOLE & HANDHELD ---
+  35,   // Master System
+  18,   // Genesis
+  36,   // Mega Drive
   20,   // Game Gear
-  21,   // Sega CD
+  21,   // Sega CD / Mega-CD
+  33,   // Sega 32X
+  17,   // Saturn
+  16,   // Dreamcast
+
+  // --- 🎮 SONY PLAYSTATION ---
+  10,   // PlayStation 1
+  11,   // PlayStation 2
+  4912, // PlayStation 3
+  4923, // PlayStation 4
+  13,   // PSP
+  39,   // PS Vita
+
+  // --- 🟢 MICROSOFT XBOX ---
+  12,   // Xbox (Gốc)
+  15,   // Xbox 360
+
+  // --- 🔴 NEC / PC ENGINE ---
+  34,   // TurboGrafx-16 / PC Engine
+  4921, // PC Engine CD-ROM² / Super CD-ROM²
+
+  // --- 🕹️ ATARI ---
   22,   // Atari 2600
   27,   // Atari 7800
   28,   // Atari Jaguar
+  4913, // Atari Lynx
+  4926, // Atari 5200
+
+  // --- 👾 CÁC MÁY CỔ / RARE khác ---
+  25,   // Neo Geo Pocket
+  26,   // Neo Geo Pocket Color
   32,   // Intellivision
-  33,   // Sega 32X
-  34,   // TurboGrafx-16
-  38,   // Wii U
-  39,   // PS Vita
-  41    // Game Boy Color
+  4920, // 3DO Interactive Multiplayer
+  4924, // Bandai WonderSwan
+  4925, // Bandai WonderSwan Color
+  4911, // Commodore Amiga / Amiga 500
+  4914, // Amstrad CPC
+  4915, // Atari ST
+  1     // PC / Windows
 ];
+
 const OUTPUT_DIR = "data";
 
 const CONFIG = {
