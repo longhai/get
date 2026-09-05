@@ -3,7 +3,38 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const PLATFORM_IDS = [5, 6, 7, 10, 13, 18, 23, 24, 35, 36, 4925, 4930];
+const PLATFORM_IDS = [
+  5,    // Game Boy Advance
+  6,    // SNES
+  7,    // NES
+  10,   // PlayStation
+  13,   // PSP
+  18,   // Genesis
+  23,   // Arcade
+  24,   // Neo Geo
+  35,   // Master System
+  36,   // Mega Drive
+
+  2,    // GameCube
+  3,    // Nintendo 64
+  4,    // Game Boy
+  8,    // Nintendo DS
+  9,    // Wii
+  11,   // PlayStation 2
+  16,   // Dreamcast
+  17,   // Saturn
+  20,   // Game Gear
+  21,   // Sega CD
+  22,   // Atari 2600
+  27,   // Atari 7800
+  28,   // Atari Jaguar
+  32,   // Intellivision
+  33,   // Sega 32X
+  34,   // TurboGrafx-16
+  38,   // Wii U
+  39,   // PS Vita
+  41    // Game Boy Color
+];
 const OUTPUT_DIR = "data";
 
 const CONFIG = {
