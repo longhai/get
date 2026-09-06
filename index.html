@@ -1,170 +1,219 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Xem dữ liệu CSV | GamesDB Viewer</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GamesDB CSV Viewer</title>
+  
+  <!-- CSS Framework & Tabulator UI -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@5.6.1/dist/css/tabulator_bootstrap5.min.css">
 
-<!-- Bootstrap 5 CSS -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-<!-- Tabulator CSS (Giao diện mượt mà, hỗ trợ resize cột mặc định) -->
-<link href="https://unpkg.com/tabulator-tables@5.5.4/dist/css/tabulator_bootstrap5.min.css" rel="stylesheet">
-
-<style>
-  body { background: #f8f9fa; padding: 20px; }
-  #csvTable {
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    background: #fff;
-  }
-  /* Style cho các ô dữ liệu trong bảng */
-  .tabulator-cell {
-    white-space: nowrap !important;
-    text-overflow: ellipsis !important;
-    overflow: hidden !important;
-    cursor: pointer;
-  }
-  .tabulator-cell:hover {
-    background-color: #e2e8f0 !important;
-  }
-</style>
+  <style>
+    body { background-color: #f4f6f9; font-family: system-ui, -apple-system, sans-serif; }
+    .card-header { background-color: #ffffff; border-bottom: 1px solid #eef2f5; }
+    
+    /* Cấu hình bảng Tabulator */
+    #csvTable {
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 13px;
+    }
+    .tabulator .tabulator-header .tabulator-col {
+      background-color: #f8f9fa;
+      font-weight: 600;
+    }
+    .tabulator-cell {
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
 
-<div class="container-fluid">
-  <h2 class="mb-3">📊 GamesDB CSV Viewer</h2>
-  <p class="text-muted">Tự động lấy danh sách file trong <code>/data</code> của repo.</p>
+<div class="container-fluid py-4">
+  <div class="card shadow-sm border-0">
+    <div class="card-header py-3">
+      <div class="row align-items-center g-3">
+        <div class="col-md-6">
+          <h4 class="mb-0 text-primary"><i class="bi bi-table me-2"></i>GamesDB CSV Viewer</h4>
+        </div>
+        <div class="col-md-6 d-flex justify-content-md-end align-items-center gap-2">
+          <label for="csvSelect" class="form-label mb-0 fw-semibold text-nowrap">Chọn tập tin CSV:</label>
+          <select id="csvSelect" class="form-select form-select-sm w-auto" disabled>
+            <option value="">⏳ Đang lấy danh sách...</option>
+          </select>
+          <button id="refreshBtn" class="btn btn-sm btn-outline-secondary" title="Tải lại danh sách">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+      </div>
+    </div>
 
-  <div class="row g-2 align-items-center mb-3">
-    <div class="col-auto">
-      <select id="csvSelect" class="form-select"></select>
-    </div>
-    <div class="col-auto">
-      <button id="loadBtn" class="btn btn-primary">Tải dữ liệu</button>
-    </div>
-    <div class="col-auto ms-auto">
-      <input type="text" id="searchInput" class="form-select" placeholder="🔍 Tìm kiếm nhanh...">
+    <div class="card-body">
+      <!-- Vùng hiển thị trạng thái -->
+      <div id="statusAlert" class="alert alert-info py-2 d-none" role="alert"></div>
+
+      <!-- Bảng dữ liệu Tabulator -->
+      <div id="csvTable"></div>
     </div>
   </div>
-
-  <!-- Bảng dữ liệu Tabulator -->
-  <div id="csvTable"></div>
 </div>
 
-<!-- Modal xem chi tiết nội dung ô -->
+<!-- Modal xem nội dung chi tiết -->
 <div class="modal fade" id="cellDetailModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="modalTitle">Chi tiết thông tin</h5>
+        <h5 class="modal-title" id="modalTitle">Chi tiết ô dữ liệu</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" id="modalBody" style="white-space: pre-wrap; word-break: break-word;"></div>
+      <div class="modal-body" id="modalBody" style="white-space: pre-wrap; word-break: break-word; max-height: 70vh; overflow-y: auto;"></div>
     </div>
   </div>
 </div>
 
 <!-- Scripts -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://unpkg.com/tabulator-tables@5.5.4/dist/js/tabulator.min.js"></script>
+<script src="https://unpkg.com/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-const repo = location.pathname.split('/')[1];
-const owner = location.hostname.split('.')[0];
-const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data`;
+  let tableInstance = null;
+  const modalInstance = new bootstrap.Modal(document.getElementById('cellDetailModal'));
 
-let tableInstance = null;
-const detailModal = new bootstrap.Modal(document.getElementById('cellDetailModal'));
+  // Tự động xác định Repository trên GitHub Pages
+  const pathSegments = location.pathname.split('/').filter(Boolean);
+  const owner = location.hostname.split('.')[0];
+  const repo = pathSegments[0] || '';
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data`;
 
-// 1. Lấy danh sách file CSV từ GitHub API
-async function listCSVFiles() {
-  try {
-    const res = await fetch(apiUrl);
-    const files = await res.json();
-    const csvFiles = Array.isArray(files) ? files.filter(f => f.name.endsWith('.csv')) : [];
-    
-    const select = document.getElementById('csvSelect');
-    if (csvFiles.length > 0) {
-      select.innerHTML = csvFiles.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
-    } else {
-      select.innerHTML = '<option disabled selected>Không có file CSV nào</option>';
-    }
-  } catch (err) {
-    alert('❌ Không thể lấy danh sách file CSV.\n' + err);
+  // Hiển thị thông báo trạng thái
+  function showStatus(message, type = 'info') {
+    const alertEl = document.getElementById('statusAlert');
+    alertEl.className = `alert alert-${type} py-2`;
+    alertEl.innerHTML = message;
+    alertEl.classList.remove('d-none');
   }
-}
 
-// 2. Đọc file CSV và khởi tạo bảng Tabulator
-async function loadCSV() {
-  const url = document.getElementById('csvSelect').value;
-  if (!url) return;
+  function hideStatus() {
+    document.getElementById('statusAlert').classList.add('d-none');
+  }
 
-  const res = await fetch(url);
-  const csvText = await res.text();
+  // Lấy danh sách file CSV
+  async function listCSVFiles() {
+    const select = document.getElementById('csvSelect');
+    select.disabled = true;
+    select.innerHTML = '<option value="">⏳ Đang lấy danh sách...</option>';
 
-  Papa.parse(csvText, {
-    header: true,
-    skipEmptyLines: true,
-    complete: results => {
-      const data = results.data;
-      if (data.length === 0) {
-        alert("File CSV không có dữ liệu.");
+    try {
+      const res = await fetch(apiUrl);
+      if (!res.ok) throw new Error(`Lỗi kết nối GitHub API (${res.status})`);
+      
+      const files = await res.json();
+      const csvFiles = files.filter(f => f.name.toLowerCase().endsWith('.csv'));
+
+      if (csvFiles.length === 0) {
+        select.innerHTML = '<option value="">Không tìm thấy file CSV trong /data</option>';
         return;
       }
 
-      // Tự động tạo cấu hình cột từ các key của dòng đầu tiên
-      const headers = Object.keys(data[0]);
-      const columns = headers.map(header => ({
+      select.innerHTML = csvFiles.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
+      select.disabled = false;
+
+      // Tự động tải file đầu tiên trong danh sách
+      loadCSV(select.value);
+    } catch (err) {
+      showStatus(`❌ Không thể tải danh sách file: ${err.message}`, 'danger');
+      select.innerHTML = '<option value="">Lỗi tải dữ liệu</option>';
+    }
+  }
+
+  // Đọc và hiển thị CSV
+  async function loadCSV(url) {
+    if (!url) return;
+
+    showStatus('<i class="bi bi-hourglass-split me-1"></i> Đang tải và xử lý dữ liệu CSV...', 'info');
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Lỗi tải file (${res.status})`);
+      
+      const csvText = await res.text();
+
+      Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          if (!results.data || results.data.length === 0) {
+            showStatus('⚠️ File CSV rỗng hoặc không đúng định dạng.', 'warning');
+            if (tableInstance) tableInstance.clearData();
+            return;
+          }
+
+          renderTable(results.data);
+          hideStatus();
+        },
+        error: (err) => {
+          showStatus(`❌ Lỗi đọc định dạng CSV: ${err.message}`, 'danger');
+        }
+      });
+    } catch (err) {
+      showStatus(`❌ Không thể nạp file CSV: ${err.message}`, 'danger');
+    }
+  }
+
+  // Render bảng với Tabulator
+  function renderTable(data) {
+    const headers = Object.keys(data[0]);
+
+    // Tự động tạo danh sách cột cho Tabulator
+    const columns = headers.map(header => {
+      return {
         title: header,
         field: header,
-        resizable: true,     // Bật tính năng kéo rê thay đổi chiều rộng cột
-        headerFilter: true,  // Bật ô lọc dữ liệu theo từng cột
-        tooltip: true        // Hiển thị tooltip ngắn khi rê chuột vào
-      }));
+        headerFilter: "input", // Thêm bộ lọc tìm kiếm cho từng cột
+        headerFilterPlaceholder: "Lọc...",
+        resizable: true,
+        formatter: "textarea", // Tự động rớt dòng đẹp hơn
+        cellClick: function(e, cell) {
+          const val = cell.getValue();
+          if (val !== undefined && val !== null && val !== '') {
+            document.getElementById('modalTitle').innerText = header;
+            document.getElementById('modalBody').innerText = String(val);
+            modalInstance.show();
+          }
+        }
+      };
+    });
 
-      // Nếu bảng đã khởi tạo trước đó thì hủy để tạo bảng mới
-      if (tableInstance) tableInstance.destroy();
-
-      tableInstance = new Tabulator("#csvTable", {
-        data: data,
-        columns: columns,
-        layout: "fitDataFill", // Cột tự co giãn vừa nội dung, cho phép cuộn ngang
-        pagination: "local",
-        paginationSize: 20,
-        paginationSizeSelector: [10, 20, 50, 100],
-        movableColumns: true,  // Cho phép kéo thả thay đổi vị trí các cột
-        height: "70vh",        // Giới hạn chiều cao bảng và dùng Virtual DOM
-      });
-
-      // Sự kiện click vào ô bất kỳ để mở Modal chi tiết
-      tableInstance.on("cellClick", function(e, cell){
-        const fieldName = cell.getField();
-        const cellValue = cell.getValue() ?? '';
-
-        document.getElementById('modalTitle').innerText = fieldName;
-        document.getElementById('modalBody').innerText = cellValue;
-        detailModal.show();
-      });
+    // Nếu bảng đã khởi tạo trước đó -> Thay đổi cấu trúc và dữ liệu
+    if (tableInstance) {
+      tableInstance.destroy();
     }
-  });
-}
 
-// 3. Lọc dữ liệu toàn bộ bảng từ ô tìm kiếm nhanh
-document.getElementById('searchInput').addEventListener('keyup', function(e) {
-  if (tableInstance) {
-    tableInstance.setFilter(customGlobalFilter, e.target.value);
+    tableInstance = new Tabulator("#csvTable", {
+      data: data,
+      columns: columns,
+      layout: "fitColumns",
+      pagination: "local",
+      paginationSize: 20,
+      paginationSizeSelector: [10, 20, 50, 100],
+      movableColumns: true,
+      resizableColumnFit: true,
+      maxHeight: "70vh",
+      placeholder: "Không có dữ liệu"
+    });
   }
-});
 
-function customGlobalFilter(data, filterValue) {
-  if (!filterValue) return true;
-  const term = filterValue.toLowerCase();
-  return Object.values(data).some(val => String(val).toLowerCase().includes(term));
-}
+  // Lắng nghe sự kiện
+  document.getElementById('csvSelect').addEventListener('change', (e) => loadCSV(e.target.value));
+  document.getElementById('refreshBtn').addEventListener('click', listCSVFiles);
 
-document.getElementById('loadBtn').addEventListener('click', loadCSV);
-listCSVFiles();
+  // Khởi chạy khi load trang
+  listCSVFiles();
 </script>
+
 </body>
 </html>
