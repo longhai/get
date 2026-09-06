@@ -4,35 +4,51 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Xem dữ liệu CSV | GamesDB Viewer</title>
+
+<!-- Bootstrap 5 CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
+<!-- Tabulator CSS (Giao diện mượt mà, hỗ trợ resize cột mặc định) -->
+<link href="https://unpkg.com/tabulator-tables@5.5.4/dist/css/tabulator_bootstrap5.min.css" rel="stylesheet">
+
 <style>
   body { background: #f8f9fa; padding: 20px; }
-  table { font-size: 13px; table-layout: fixed; width: 100% !important; }
-  td {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-    vertical-align: top;
+  #csvTable {
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #fff;
   }
-  td:hover { background-color: #e9ecef; }
-  /* Con trỏ hiển thị thanh kéo cột */
-  .JRCable, .JCSdl { cursor: col-resize !important; }
+  /* Style cho các ô dữ liệu trong bảng */
+  .tabulator-cell {
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+    overflow: hidden !important;
+    cursor: pointer;
+  }
+  .tabulator-cell:hover {
+    background-color: #e2e8f0 !important;
+  }
 </style>
 </head>
 <body>
+
 <div class="container-fluid">
   <h2 class="mb-3">📊 GamesDB CSV Viewer</h2>
   <p class="text-muted">Tự động lấy danh sách file trong <code>/data</code> của repo.</p>
 
-  <div class="mb-3">
-    <label class="form-label">Chọn tệp CSV:</label>
-    <select id="csvSelect" class="form-select w-auto d-inline-block"></select>
-    <button id="loadBtn" class="btn btn-primary ms-2">Tải dữ liệu</button>
+  <div class="row g-2 align-items-center mb-3">
+    <div class="col-auto">
+      <select id="csvSelect" class="form-select"></select>
+    </div>
+    <div class="col-auto">
+      <button id="loadBtn" class="btn btn-primary">Tải dữ liệu</button>
+    </div>
+    <div class="col-auto ms-auto">
+      <input type="text" id="searchInput" class="form-select" placeholder="🔍 Tìm kiếm nhanh...">
+    </div>
   </div>
 
-  <div id="tableContainer" class="table-responsive mt-4"></div>
+  <!-- Bảng dữ liệu Tabulator -->
+  <div id="csvTable"></div>
 </div>
 
 <!-- Modal xem chi tiết nội dung ô -->
@@ -48,37 +64,41 @@
   </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+<!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<!-- Thư viện kéo giãn kích thước cột -->
-<script src="https://cdn.jsdelivr.net/npm/colresizable@1.6.0/colResizable-1.6.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://unpkg.com/tabulator-tables@5.5.4/dist/js/tabulator.min.js"></script>
 
 <script>
 const repo = location.pathname.split('/')[1];
 const owner = location.hostname.split('.')[0];
 const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data`;
 
+let tableInstance = null;
+const detailModal = new bootstrap.Modal(document.getElementById('cellDetailModal'));
+
+// 1. Lấy danh sách file CSV từ GitHub API
 async function listCSVFiles() {
   try {
     const res = await fetch(apiUrl);
     const files = await res.json();
-    const csvFiles = files.filter(f => f.name.endsWith('.csv'));
+    const csvFiles = Array.isArray(files) ? files.filter(f => f.name.endsWith('.csv')) : [];
+    
     const select = document.getElementById('csvSelect');
-    select.innerHTML = csvFiles.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
-    if (csvFiles.length === 0) select.innerHTML = '<option disabled>Không có file CSV</option>';
+    if (csvFiles.length > 0) {
+      select.innerHTML = csvFiles.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
+    } else {
+      select.innerHTML = '<option disabled selected>Không có file CSV nào</option>';
+    }
   } catch (err) {
     alert('❌ Không thể lấy danh sách file CSV.\n' + err);
   }
 }
 
+// 2. Đọc file CSV và khởi tạo bảng Tabulator
 async function loadCSV() {
   const url = document.getElementById('csvSelect').value;
   if (!url) return;
-  const container = document.getElementById('tableContainer');
-  container.innerHTML = "<p class='text-muted'>⏳ Đang tải...</p>";
 
   const res = await fetch(url);
   const csvText = await res.text();
@@ -89,61 +109,58 @@ async function loadCSV() {
     complete: results => {
       const data = results.data;
       if (data.length === 0) {
-        container.innerHTML = "<p class='text-danger'>File CSV trống.</p>";
+        alert("File CSV không có dữ liệu.");
         return;
       }
 
+      // Tự động tạo cấu hình cột từ các key của dòng đầu tiên
       const headers = Object.keys(data[0]);
-      let tableHTML = `<table id="csvTable" class="table table-striped table-bordered"><thead><tr>`;
-      headers.forEach(h => tableHTML += `<th>${h}</th>`);
-      tableHTML += `</tr></thead><tbody>`;
+      const columns = headers.map(header => ({
+        title: header,
+        field: header,
+        resizable: true,     // Bật tính năng kéo rê thay đổi chiều rộng cột
+        headerFilter: true,  // Bật ô lọc dữ liệu theo từng cột
+        tooltip: true        // Hiển thị tooltip ngắn khi rê chuột vào
+      }));
 
-      data.forEach(row => {
-        tableHTML += '<tr>';
-        headers.forEach(h => {
-          let cellText = row[h] ?? '';
-          tableHTML += `<td data-fulltext="${cellText.replace(/"/g, '&quot;')}" data-header="${h}">${cellText}</td>`;
-        });
-        tableHTML += '</tr>';
+      // Nếu bảng đã khởi tạo trước đó thì hủy để tạo bảng mới
+      if (tableInstance) tableInstance.destroy();
+
+      tableInstance = new Tabulator("#csvTable", {
+        data: data,
+        columns: columns,
+        layout: "fitDataFill", // Cột tự co giãn vừa nội dung, cho phép cuộn ngang
+        pagination: "local",
+        paginationSize: 20,
+        paginationSizeSelector: [10, 20, 50, 100],
+        movableColumns: true,  // Cho phép kéo thả thay đổi vị trí các cột
+        height: "70vh",        // Giới hạn chiều cao bảng và dùng Virtual DOM
       });
 
-      tableHTML += '</tbody></table>';
-      container.innerHTML = tableHTML;
+      // Sự kiện click vào ô bất kỳ để mở Modal chi tiết
+      tableInstance.on("cellClick", function(e, cell){
+        const fieldName = cell.getField();
+        const cellValue = cell.getValue() ?? '';
 
-      // Khởi tạo DataTables
-      const table = $('#csvTable').DataTable({
-        pageLength: 20,
-        scrollX: true,
-        order: [],
-        language: {
-          search: "Tìm kiếm:",
-          lengthMenu: "Hiển thị _MENU_ dòng",
-          info: "Hiển thị _START_ - _END_ / _TOTAL_ dòng",
-          paginate: { previous: "Trước", next: "Sau" }
-        },
-        initComplete: function () {
-          // Bật tính năng kéo rê thay đổi chiều rộng cột
-          $("#csvTable").colResizable({
-            liveDrag: true,
-            gripInnerHtml: "<div class='grip'></div>",
-            draggingClass: "dragging",
-            resizeMode: 'overflow'
-          });
-        }
-      });
-
-      // Sự kiện Click vào ô để xem nội dung đầy đủ
-      const detailModal = new bootstrap.Modal(document.getElementById('cellDetailModal'));
-      $('#csvTable tbody').on('click', 'td', function () {
-        const fullText = $(this).attr('data-fulltext') || $(this).text();
-        const headerName = $(this).attr('data-header') || 'Chi tiết';
-        
-        document.getElementById('modalTitle').innerText = headerName;
-        document.getElementById('modalBody').innerText = fullText;
+        document.getElementById('modalTitle').innerText = fieldName;
+        document.getElementById('modalBody').innerText = cellValue;
         detailModal.show();
       });
     }
   });
+}
+
+// 3. Lọc dữ liệu toàn bộ bảng từ ô tìm kiếm nhanh
+document.getElementById('searchInput').addEventListener('keyup', function(e) {
+  if (tableInstance) {
+    tableInstance.setFilter(customGlobalFilter, e.target.value);
+  }
+});
+
+function customGlobalFilter(data, filterValue) {
+  if (!filterValue) return true;
+  const term = filterValue.toLowerCase();
+  return Object.values(data).some(val => String(val).toLowerCase().includes(term));
 }
 
 document.getElementById('loadBtn').addEventListener('click', loadCSV);
