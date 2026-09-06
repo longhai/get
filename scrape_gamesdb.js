@@ -16,8 +16,7 @@ const PLATFORM_IDS = [
   6,    // SNES / Super Famicom  
   3,    // Nintendo 64  
   2,    // GameCube  
-  9,    // Wii  
-  38,   // Wii U  
+  9,    // Wii    
   4970, // Nintendo Switch  
   4,    // Game Boy  
   41,   // Game Boy Color  
@@ -37,16 +36,8 @@ const PLATFORM_IDS = [
   16,   // Dreamcast  
   
   // --- 🎮 SONY PLAYSTATION ---  
-  10,   // PlayStation 1  
-  11,   // PlayStation 2  
-  4912, // PlayStation 3  
-  4923, // PlayStation 4  
-  13,   // PSP  
-  39,   // PS Vita  
-  
-  // --- 🟢 MICROSOFT XBOX ---  
-  12,   // Xbox (Gốc)  
-  15,   // Xbox 360  
+  10,   // PlayStation 1    
+  13,   // PSP      
   
   // --- 🔴 NEC / PC ENGINE ---  
   34,   // TurboGrafx-16 / PC Engine  
@@ -60,16 +51,9 @@ const PLATFORM_IDS = [
   4926, // Atari 5200  
   
   // --- 👾 CÁC MÁY CỔ / RARE khác ---  
-  25,   // Neo Geo Pocket  
-  26,   // Neo Geo Pocket Color  
-  32,   // Intellivision  
-  4920, // 3DO Interactive Multiplayer  
+  25,   // Neo Geo Pocket    
   4924, // Bandai WonderSwan  
-  4925, // Bandai WonderSwan Color  
-  4911, // Commodore Amiga / Amiga 500  
-  4914, // Amstrad CPC  
-  4915, // Atari ST  
-  1     // PC / Windows  
+  4925, // Bandai WonderSwan Color    
 ];  
   
 const OUTPUT_DIR = "data";  
