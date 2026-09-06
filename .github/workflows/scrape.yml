@@ -5,97 +5,32 @@ on:
   schedule:
     - cron: '0 3 1 * *'
 
-permissions:
-  contents: write
-
 jobs:
   scrape:
-    strategy:
-      fail-fast: false
-      matrix:
-        group:
-          - name: arcade
-            ids: "23,24,4917,4918,4919"
-          - name: nintendo
-            ids: "2,3,4,5,6,7,8,9,38,4970,4971,4922"
-          - name: sega
-            ids: "16,17,18,20,21,33,35,36"
-          - name: sony
-            ids: "10,11,13,39,4912,4923"
-          - name: microsoft
-            ids: "12,15"
-          - name: retro
-            ids: "1,22,25,26,27,28,32,34,4911,4913,4914,4915,4920,4921,4924,4925,4926"
-
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    permissions:
+      contents: write
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v5
 
-      - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: '24'
 
       - name: Install dependencies
-        run: npm install cheerio
+        run: npm install cheerio node-fetch --no-save
 
-      - name: Scrape ${{ matrix.group.name }}
-        env:
-          PLATFORM_IDS: ${{ matrix.group.ids }}
-        run: node scraper.js
+      - name: Run integrated scraper
+        run: node scrape_gamesdb.js
 
-      - name: Upload data
-        uses: actions/upload-artifact@v4
-        with:
-          name: data-${{ matrix.group.name }}
-          path: data/
-          if-no-files-found: ignore
-
-  merge:
-    needs: scrape
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download all data
-        uses: actions/download-artifact@v4
-        with:
-          pattern: data-*
-          path: merged
-          merge-multiple: false
-
-      - name: Merge CSV
-        shell: bash
+      - name: Commit results
         run: |
-          mkdir -p data
-
-          find merged -type f -name "*.csv" | while read file; do
-            name=$(basename "$file")
-            target="data/$name"
-
-            if [ ! -f "$target" ]; then
-              cp "$file" "$target"
-            else
-              tail -n +2 "$file" >> "$target"
-            fi
-          done
-
-      - name: Commit changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add data/
-
-          if git diff --cached --quiet; then
-            echo "No changes"
-          else
-            git commit -m "Update GamesDB data"
-            git push
-          fi
+          git config --global user.name "GitHub Action"
+          git config --global user.email "actions@github.com"
+          git add data/*.csv || echo "No data files"
+          git commit -m "Update scraped NES games data" || echo "No changes"
+          git push
