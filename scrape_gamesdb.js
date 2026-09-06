@@ -3,349 +3,535 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const PLATFORM_IDS = [
-  // --- 🕹️ ARCADE & MÁY THÙNG ---
-  23,   // Arcade (MAME / FBA / CPS1,2,3)
-  24,   // SNES / SNK Neo Geo AES/MVS
-  4917, // Sammy Atomiswave
-  4918, // Sega NAOMI
-  4919, // Sega NAOMI 2
-
-  // --- 🍄 NINTENDO CONSOLE & HANDHELD ---
-  7,    // NES / Famicom
-  6,    // SNES / Super Famicom
-  3,    // Nintendo 64
-  2,    // GameCube
-  9,    // Wii
-  38,   // Wii U
-  4970, // Nintendo Switch
-  4,    // Game Boy
-  41,   // Game Boy Color
-  5,    // Game Boy Advance
-  8,    // Nintendo DS
-  4971, // Nintendo 3DS
-  4922, // Virtual Boy
-
-  // --- 🌀 SEGA CONSOLE & HANDHELD ---
-  35,   // Master System
-  18,   // Genesis
-  36,   // Mega Drive
-  20,   // Game Gear
-  21,   // Sega CD / Mega-CD
-  33,   // Sega 32X
-  17,   // Saturn
-  16,   // Dreamcast
-
-  // --- 🎮 SONY PLAYSTATION ---
-  10,   // PlayStation 1
-  11,   // PlayStation 2
-  4912, // PlayStation 3
-  4923, // PlayStation 4
-  13,   // PSP
-  39,   // PS Vita
-
-  // --- 🟢 MICROSOFT XBOX ---
-  12,   // Xbox (Gốc)
-  15,   // Xbox 360
-
-  // --- 🔴 NEC / PC ENGINE ---
-  34,   // TurboGrafx-16 / PC Engine
-  4921, // PC Engine CD-ROM² / Super CD-ROM²
-
-  // --- 🕹️ ATARI ---
-  22,   // Atari 2600
-  27,   // Atari 7800
-  28,   // Atari Jaguar
-  4913, // Atari Lynx
-  4926, // Atari 5200
-
-  // --- 👾 CÁC MÁY CỔ / RARE khác ---
-  25,   // Neo Geo Pocket
-  26,   // Neo Geo Pocket Color
-  32,   // Intellivision
-  4920, // 3DO Interactive Multiplayer
-  4924, // Bandai WonderSwan
-  4925, // Bandai WonderSwan Color
-  4911, // Commodore Amiga / Amiga 500
-  4914, // Amstrad CPC
-  4915, // Atari ST
-  1     // PC / Windows
-];
-
 const OUTPUT_DIR = "data";
+
+const PLATFORM_IDS = (process.env.PLATFORM_IDS || "")
+  .split(",")
+  .map(x => x.trim())
+  .filter(Boolean)
+  .map(Number);
 
 const CONFIG = {
   delayBetweenPages: 500,
   delayBetweenDetails: 100,
   maxRetries: 3,
   timeout: 30000,
-  concurrency: 18
+  concurrency: 12
 };
 
-// Hàm đọc CSV xử lý chính xác dấu ngoặc kép và dấu phẩy
+if (!PLATFORM_IDS.length) {
+  throw new Error("PLATFORM_IDS is empty");
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function parseCsvLine(line) {
   const result = [];
-  let current = '';
+  let current = "";
   let inQuotes = false;
-  
+
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
+
     if (char === '"' && line[i + 1] === '"') {
       current += '"';
       i++;
     } else if (char === '"') {
       inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === "," && !inQuotes) {
       result.push(current);
-      current = '';
+      current = "";
     } else {
       current += char;
     }
   }
+
   result.push(current);
   return result;
 }
 
 class GameScraper {
   constructor() {
-    this.stats = { total: 0, success: 0, errors: 0, skipped: 0 };
+    this.stats = {
+      total: 0,
+      success: 0,
+      errors: 0,
+      skipped: 0
+    };
   }
 
   async fetchWithRetry(url, retries = CONFIG.maxRetries) {
     for (let attempt = 1; attempt <= retries; attempt++) {
+      let controller;
+      let timeoutId;
+
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), CONFIG.timeout);
-        const res = await fetch(url, { 
+        controller = new AbortController();
+
+        timeoutId = setTimeout(
+          () => controller.abort(),
+          CONFIG.timeout
+        );
+
+        const res = await fetch(url, {
           signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          }
         });
-        clearTimeout(timeoutId);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
         return await res.text();
       } catch (error) {
         if (attempt === retries) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+
+        console.log(
+          `⚠️ Retry ${attempt}/${retries}: ${url}`
+        );
+
+        await sleep(1000 * attempt);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     }
   }
 
+  cleanFileName(name) {
+    return name
+      .replace(/[<>:"/\\|?*]/g, "")
+      .trim();
+  }
+
   readExistingGames(platformName) {
-    const cleanName = platformName.replace(/[<>:"/\\|?*]/g, '').trim();
+    const cleanName = this.cleanFileName(platformName);
+
+    if (!cleanName) return new Set();
+
     const filePath = `${OUTPUT_DIR}/${cleanName}.csv`;
-    
-    if (!fs.existsSync(filePath)) return new Set();
+
+    if (!fs.existsSync(filePath)) {
+      return new Set();
+    }
 
     try {
-      const content = fs.readFileSync(filePath, 'utf8');
+      const content = fs.readFileSync(filePath, "utf8");
       const lines = content.split(/\r?\n/).slice(1);
+
       const existingTitles = new Set();
-      
-      lines.forEach(line => {
-        if (line.trim()) {
-          const columns = parseCsvLine(line);
-          const title = columns[0]?.trim();
-          if (title) existingTitles.add(title.toLowerCase());
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        const columns = parseCsvLine(line);
+        const title = columns[0]?.trim();
+
+        if (title) {
+          existingTitles.add(title.toLowerCase());
         }
-      });
-      
-      console.log(`📚 Found ${existingTitles.size} existing unique titles in CSV`);
+      }
+
+      console.log(
+        `📚 Existing: ${existingTitles.size} games`
+      );
+
       return existingTitles;
-    } catch (error) {
-      console.log('❌ Error reading existing file, starting fresh');
+    } catch {
+      console.log("⚠️ Cannot read existing CSV");
       return new Set();
     }
   }
 
   async scrapeGameIds(platformId) {
-    console.log(`📥 Scraping platform ${platformId}...`);
-    let page = 1;
-    const gameIdsSet = new Set(); // Dùng Set để lọc trùng ID ngay từ đầu
+    console.log(`\n📥 Platform ${platformId}`);
+
+    const gameIdsSet = new Set();
     let platformName = "";
+    let page = 1;
 
     while (true) {
-      const url = `${BASE_URL}?platform_id=${platformId}&page=${page}`;
-      console.log(`🔹 Page ${page}: ${url}`);
-      
+      const url =
+        `${BASE_URL}?platform_id=${platformId}&page=${page}`;
+
+      console.log(`🔹 Page ${page}`);
+
       try {
         const html = await this.fetchWithRetry(url);
         const $ = cheerio.load(html);
 
-        if (page === 1 && !platformName) {
-          platformName = $(".card-header legend").text().trim().replace(/\s+/g, ' ');
-          console.log(`🎮 Platform: "${platformName}"`);
+        if (!platformName) {
+          platformName =
+            $(".card-header legend").first().text().trim() ||
+            $("h1").first().text().trim() ||
+            `Platform_${platformId}`;
+
+          platformName =
+            platformName.replace(/\s+/g, " ");
         }
 
-        const cards = $(".col-6.col-md-2 .card.border-primary");
-        if (cards.length === 0) break;
+        // Tìm trực tiếp link game thay vì phụ thuộc card
+        $("a[href*='game.php?id=']").each((_, el) => {
+          const href = $(el).attr("href");
+          const match = href?.match(/[?&]id=(\d+)/);
 
-        cards.each((_, el) => {
-          const gameLink = $(el).closest('a').attr('href');
-          const idMatch = gameLink?.match(/[?&]id=(\d+)/);
-          if (idMatch) gameIdsSet.add(idMatch[1]);
+          if (match) {
+            gameIdsSet.add(match[1]);
+          }
         });
 
-        console.log(`✅ Page ${page}: ${cards.length} cards found`);
+        console.log(
+          `   Found: ${gameIdsSet.size} IDs`
+        );
 
-        if ($('a.page-link:contains("Next")').length === 0) break;
+        const next =
+          $("a.page-link")
+            .filter((_, el) =>
+              $(el).text().trim().toLowerCase() === "next"
+            )
+            .length > 0;
+
+        if (!next) break;
+
         page++;
-        await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenPages));
+        await sleep(CONFIG.delayBetweenPages);
+
       } catch (error) {
-        console.error(`❌ Page ${page} error:`, error.message);
+        console.error(
+          `❌ Page ${page}: ${error.message}`
+        );
         break;
       }
     }
 
-    const gameIds = Array.from(gameIdsSet);
-    console.log(`📋 Found ${gameIds.length} unique game IDs\n`);
-    return { gameIds, platformName };
+    const gameIds = [...gameIdsSet];
+
+    console.log(
+      `📋 ${platformName}: ${gameIds.length} unique games`
+    );
+
+    return {
+      gameIds,
+      platformName
+    };
   }
 
   async scrapeGameDetails(gameId) {
     try {
-      const html = await this.fetchWithRetry(`https://thegamesdb.net/game.php?id=${gameId}`);
+      const html = await this.fetchWithRetry(
+        `https://thegamesdb.net/game.php?id=${gameId}`
+      );
+
       const $ = cheerio.load(html);
 
-      const leftCard = $(".col-12.col-md-3.col-lg-2 .card.border-primary");
-      const mainCard = $(".col-12.col-md-9.col-lg-8 .card.border-primary").first();
+      const leftCard =
+        $(".col-12.col-md-3.col-lg-2 .card.border-primary")
+          .first();
 
-      const getText = (selector, replaceText = '') => 
-        $(selector).text().replace(replaceText, '').trim();
+      const mainCard =
+        $(".col-12.col-md-9.col-lg-8 .card.border-primary")
+          .first();
+
+      const getText = (selector, remove = "") =>
+        $(selector)
+          .text()
+          .replace(remove, "")
+          .trim();
 
       const gameData = {
         title: $("h1").first().text().trim(),
-        alternate_titles: getText("h6.text-muted", 'Also know as:'),
-        region: getText(leftCard.find("p:contains('Region:')"), 'Region:'),
-        country: getText(leftCard.find("p:contains('Country:')"), 'Country:'),
-        publisher: getText(leftCard.find("p:contains('Publishers(s):')"), 'Publishers(s):'),
-        developer: getText(leftCard.find("p:contains('Developer(s):')"), 'Developer(s):'),
-        release_date: getText(leftCard.find("p:contains('ReleaseDate:')"), 'ReleaseDate:'),
-        players: getText(leftCard.find("p:contains('Players:')"), 'Players:'),
-        coop: getText(leftCard.find("p:contains('Co-op:')"), 'Co-op:'),
-        genre: getText(mainCard.find("p:contains('Genre(s):')"), 'Genre(s):'),
-        esrb_rating: getText(mainCard.find("p:contains('ESRB Rating:')"), 'ESRB Rating:'),
-        description: mainCard.find(".game-overview").text().trim()
+
+        alternate_titles:
+          getText("h6.text-muted", "Also know as:"),
+
+        region:
+          getText(
+            leftCard.find("p:contains('Region:')"),
+            "Region:"
+          ),
+
+        country:
+          getText(
+            leftCard.find("p:contains('Country:')"),
+            "Country:"
+          ),
+
+        publisher:
+          getText(
+            leftCard.find("p:contains('Publishers(s):')"),
+            "Publishers(s):"
+          ),
+
+        developer:
+          getText(
+            leftCard.find("p:contains('Developer(s):')"),
+            "Developer(s):"
+          ),
+
+        release_date:
+          getText(
+            leftCard.find("p:contains('ReleaseDate:')"),
+            "ReleaseDate:"
+          ),
+
+        players:
+          getText(
+            leftCard.find("p:contains('Players:')"),
+            "Players:"
+          ),
+
+        coop:
+          getText(
+            leftCard.find("p:contains('Co-op:')"),
+            "Co-op:"
+          ),
+
+        genre:
+          getText(
+            mainCard.find("p:contains('Genre(s):')"),
+            "Genre(s):"
+          ),
+
+        esrb_rating:
+          getText(
+            mainCard.find("p:contains('ESRB Rating:')"),
+            "ESRB Rating:"
+          ),
+
+        description:
+          mainCard.find(".game-overview").text().trim()
       };
 
-      if (!gameData.title) throw new Error('Missing title');
+      if (!gameData.title) {
+        throw new Error("Missing title");
+      }
 
       return gameData;
+
     } catch (error) {
-      console.error(`❌ Game ${gameId}:`, error.message);
-      return { error: error.message };
+      console.error(
+        `❌ Game ${gameId}: ${error.message}`
+      );
+
+      return {
+        error: error.message
+      };
     }
   }
 
   async scrapePlatform(platformId) {
-    const { gameIds, platformName } = await this.scrapeGameIds(platformId);
-    if (gameIds.length === 0) return null;
+    const {
+      gameIds,
+      platformName
+    } = await this.scrapeGameIds(platformId);
 
-    const existingGames = this.readExistingGames(platformName);
-    
-    console.log(`⚡ Scraping details for ${gameIds.length} unique games...`);
-    
-    const batches = [];
-    for (let i = 0; i < gameIds.length; i += CONFIG.concurrency) {
-      batches.push(gameIds.slice(i, i + CONFIG.concurrency));
+    if (!gameIds.length) {
+      return {
+        platformName,
+        games: []
+      };
     }
 
+    const existingGames =
+      this.readExistingGames(platformName);
+
     const newGames = [];
-    for (let i = 0; i < batches.length; i++) {
-      const batchResults = await Promise.all(
-        batches[i].map(gameId => 
-          this.scrapeGameDetails(gameId)
-            .then(result => {
-              if (result.error) {
-                this.stats.errors++;
-                return null;
-              }
-              
-              if (existingGames.has(result.title.toLowerCase())) {
-                this.stats.skipped++;
-                return null;
-              }
-              
-              // Đánh dấu đã xử lý tiêu đề này ngay trong bộ nhớ để tránh trùng lặp cùng đợt scrape
-              existingGames.add(result.title.toLowerCase());
-              this.stats.success++;
-              return result;
-            })
-            .catch(() => {
-              this.stats.errors++;
-              return null;
-            })
-        )
+
+    console.log(
+      `⚡ Details: ${gameIds.length} games`
+    );
+
+    for (
+      let i = 0;
+      i < gameIds.length;
+      i += CONFIG.concurrency
+    ) {
+      const batch =
+        gameIds.slice(i, i + CONFIG.concurrency);
+
+      const results = await Promise.all(
+        batch.map(async gameId => {
+          const result =
+            await this.scrapeGameDetails(gameId);
+
+          if (result.error) {
+            this.stats.errors++;
+            return null;
+          }
+
+          const key =
+            result.title.toLowerCase();
+
+          if (existingGames.has(key)) {
+            this.stats.skipped++;
+            return null;
+          }
+
+          existingGames.add(key);
+          this.stats.success++;
+
+          return result;
+        })
       );
 
-      const validResults = batchResults.filter(game => game !== null);
-      newGames.push(...validResults);
-      
-      const progress = (((i + 1) / batches.length) * 100).toFixed(1);
-      console.log(`📊 Batch ${i + 1}/${batches.length} (${progress}%) | Added: ${validResults.length} | Total New: ${newGames.length}`);
-      
-      if (i < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, CONFIG.delayBetweenDetails));
+      const valid =
+        results.filter(Boolean);
+
+      newGames.push(...valid);
+
+      console.log(
+        `📊 ${Math.min(
+          i + CONFIG.concurrency,
+          gameIds.length
+        )}/${gameIds.length}` +
+        ` | New: ${valid.length}` +
+        ` | Total new: ${newGames.length}`
+      );
+
+      if (i + CONFIG.concurrency < gameIds.length) {
+        await sleep(CONFIG.delayBetweenDetails);
       }
     }
 
     this.stats.total += gameIds.length;
-    return { platformName, games: newGames };
+
+    return {
+      platformName,
+      games: newGames
+    };
   }
 
-  savePlatformData(platformName, newGames) {
-    if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  savePlatformData(platformName, games) {
+    if (!games.length) {
+      console.log(
+        `✅ Up to date: ${platformName}`
+      );
+      return;
+    }
 
-    const cleanName = platformName.replace(/[<>:"/\\|?*]/g, '').trim();
-    const outputFile = `${OUTPUT_DIR}/${cleanName}.csv`;
-    const csvHeader = "title,alternate_titles,region,country,publisher,developer,release_date,players,coop,genre,esrb_rating,description";
-    
-    const formatCsvRow = (g) => [
-      g.title, g.alternate_titles, g.region, g.country, g.publisher, 
-      g.developer, g.release_date, g.players, g.coop, g.genre, 
-      g.esrb_rating, g.description
-    ].map(x => `"${String(x || '').replace(/"/g, '""')}"`).join(",");
+    if (!fs.existsSync(OUTPUT_DIR)) {
+      fs.mkdirSync(OUTPUT_DIR, {
+        recursive: true
+      });
+    }
 
-    const rows = newGames.map(formatCsvRow).join("\n");
-    
+    const cleanName =
+      this.cleanFileName(platformName);
+
+    if (!cleanName) {
+      console.log(
+        `⚠️ Invalid platform name: ${platformName}`
+      );
+      return;
+    }
+
+    const outputFile =
+      `${OUTPUT_DIR}/${cleanName}.csv`;
+
+    const header =
+      "title,alternate_titles,region,country,publisher,developer,release_date,players,coop,genre,esrb_rating,description";
+
+    const formatRow = game =>
+      [
+        game.title,
+        game.alternate_titles,
+        game.region,
+        game.country,
+        game.publisher,
+        game.developer,
+        game.release_date,
+        game.players,
+        game.coop,
+        game.genre,
+        game.esrb_rating,
+        game.description
+      ]
+        .map(x =>
+          `"${String(x || "").replace(/"/g, '""')}"`
+        )
+        .join(",");
+
+    const rows =
+      games.map(formatRow).join("\n");
+
     if (fs.existsSync(outputFile)) {
-      const currentContent = fs.readFileSync(outputFile, 'utf8');
-      const needsNewLine = currentContent.length > 0 && !currentContent.endsWith('\n');
-      fs.appendFileSync(outputFile, (needsNewLine ? '\n' : '') + rows + '\n');
-      console.log(`📝 Appended ${newGames.length} unique games to: ${outputFile}`);
+      let current =
+        fs.readFileSync(outputFile, "utf8");
+
+      if (
+        current.length &&
+        !current.endsWith("\n")
+      ) {
+        current += "\n";
+      }
+
+      fs.writeFileSync(
+        outputFile,
+        current + rows + "\n"
+      );
+
+      console.log(
+        `📝 Added ${games.length}: ${outputFile}`
+      );
+
     } else {
-      fs.writeFileSync(outputFile, csvHeader + '\n' + rows + '\n');
-      console.log(`💾 Created new file with ${newGames.length} games: ${outputFile}`);
+      fs.writeFileSync(
+        outputFile,
+        header + "\n" + rows + "\n"
+      );
+
+      console.log(
+        `💾 Created ${outputFile}`
+      );
     }
   }
 
   async run() {
-    console.log(`🎮 Starting Smart Scraper for ${PLATFORM_IDS.length} platforms...\n`);
+    console.log(
+      `🎮 Platforms: ${PLATFORM_IDS.join(", ")}`
+    );
 
     for (const platformId of PLATFORM_IDS) {
-      console.log(`\n🔸 Processing Platform ID: ${platformId}`);
-      const platformData = await this.scrapePlatform(platformId);
-      
-      if (platformData && platformData.games.length > 0) {
-        this.savePlatformData(platformData.platformName, platformData.games);
-      } else if (platformData) {
-        console.log(`✅ All games up to date for ${platformData.platformName}`);
+      console.log(
+        `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      );
+
+      const data =
+        await this.scrapePlatform(platformId);
+
+      if (data) {
+        this.savePlatformData(
+          data.platformName,
+          data.games
+        );
       }
     }
 
-    console.log(`\n📈 Final Stats:`);
-    console.log(`✅ New Added: ${this.stats.success}`);
-    console.log(`⏭️ Skipped: ${this.stats.skipped}`);
-    console.log(`❌ Errors: ${this.stats.errors}`);
+    console.log(
+      `\n📈 FINAL`
+    );
+
+    console.log(
+      `✅ New: ${this.stats.success}`
+    );
+
+    console.log(
+      `⏭️ Skipped: ${this.stats.skipped}`
+    );
+
+    console.log(
+      `❌ Errors: ${this.stats.errors}`
+    );
   }
 }
 
-async function main() {
-  await new GameScraper().run();
-}
-
-process.on('SIGINT', () => {
-  console.log('\n🛑 Stopped by user');
-  process.exit(0);
-});
-
-main().catch(console.error);
+new GameScraper()
+  .run()
+  .catch(error => {
+    console.error(error);
+    process.exit(1);
+  });
