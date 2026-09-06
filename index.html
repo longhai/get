@@ -7,7 +7,7 @@
 
 <!-- Bootstrap 5 CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-<!-- Tabulator Dark Theme (Khớp với giao diện tối trong ảnh) -->
+<!-- Tabulator Dark Theme -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.5.2/dist/css/tabulator_midnight.min.css">
 <!-- FontAwesome Icons -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -18,9 +18,13 @@
   .form-control, .form-select, .input-group-text { background-color: #2b2b2b; border-color: #3d3d3d; color: #fff; }
   .form-control:focus, .form-select:focus { background-color: #333; color: #fff; border-color: #0d6efd; box-shadow: none; }
   
-  /* Cấu hình Tabulator cho Mobile */
+  /* Cấu hình hiển thị chữ đầy đủ */
   .tabulator { font-size: 13px; border-radius: 8px; border: 1px solid #333; background-color: #1e1e1e; }
-  .tabulator-cell { cursor: pointer; }
+  .tabulator-cell { 
+    cursor: pointer; 
+    white-space: normal !important; /* Cho phép xuống dòng tự do */
+    word-break: break-word; /* Bẻ từ nếu tên quá dài */
+  }
   .tabulator-cell:hover { background-color: #2a2a2a !important; }
 </style>
 </head>
@@ -35,7 +39,8 @@
       </div>
 
       <div class="row g-2 align-items-center">
-        <div class="col-12 col-md-6">
+        <!-- Chọn CSV -->
+        <div class="col-12 col-md-4">
           <label for="csvSelect" class="form-label fw-bold small text-muted mb-1">Chọn tệp CSV</label>
           <div class="input-group input-group-sm">
             <span class="input-group-text"><i class="fa-solid fa-file-csv"></i></span>
@@ -43,11 +48,21 @@
           </div>
         </div>
 
-        <div class="col-12 col-md-6">
-          <label for="searchInput" class="form-label fw-bold small text-muted mb-1">Tìm kiếm nhanh</label>
+        <!-- Phạm vi tìm kiếm -->
+        <div class="col-12 col-md-3">
+          <label for="searchColumnSelect" class="form-label fw-bold small text-muted mb-1">Cột tìm kiếm</label>
+          <select id="searchColumnSelect" class="form-select form-select-sm" disabled>
+            <option value="title">Chỉ tìm Tên Game (title)</option>
+            <option value="all">Tìm trên tất cả cột</option>
+          </select>
+        </div>
+
+        <!-- Khung nhập từ khóa -->
+        <div class="col-12 col-md-5">
+          <label for="searchInput" class="form-label fw-bold small text-muted mb-1">Từ khóa tìm kiếm</label>
           <div class="input-group input-group-sm">
             <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
-            <input type="text" id="searchInput" class="form-control" placeholder="Nhập từ khóa..." disabled>
+            <input type="text" id="searchInput" class="form-control" placeholder="Nhập tên game..." disabled>
           </div>
         </div>
       </div>
@@ -61,12 +76,12 @@
   </div>
 </div>
 
-<!-- Modal xem chi tiết -->
+<!-- Modal xem chi tiết ô -->
 <div class="modal fade" id="cellDetailModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content bg-dark text-light border-secondary">
       <div class="modal-header border-secondary">
-        <h5 class="modal-title" id="modalTitle"><i class="fa-solid fa-circle-info me-2"></i>Chi tiết thông tin</h5>
+        <h5 class="modal-title" id="modalTitle"><i class="fa-solid fa-circle-info me-2"></i>Chi tiết</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
@@ -89,6 +104,7 @@ const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data`;
 const statusBadge = document.getElementById('statusBadge');
 const csvSelect = document.getElementById('csvSelect');
 const searchInput = document.getElementById('searchInput');
+const searchColumnSelect = document.getElementById('searchColumnSelect');
 const detailModal = new bootstrap.Modal(document.getElementById('cellDetailModal'));
 
 function setStatus(text, bgClass = 'bg-secondary') {
@@ -124,6 +140,7 @@ async function loadCSV(url) {
   setStatus('Đang đọc CSV...', 'bg-primary');
   searchInput.value = '';
   searchInput.disabled = true;
+  searchColumnSelect.disabled = true;
 
   try {
     const res = await fetch(url);
@@ -143,6 +160,7 @@ async function loadCSV(url) {
         renderTable(data);
         setStatus(`Đã tải ${data.length} dòng`, 'bg-success');
         searchInput.disabled = false;
+        searchColumnSelect.disabled = false;
       }
     });
   } catch (err) {
@@ -151,15 +169,15 @@ async function loadCSV(url) {
 }
 
 function renderTable(data) {
-  const isMobile = window.innerWidth < 768;
   const headers = Object.keys(data[0]);
   
   const columns = headers.map(h => ({
     title: h,
     field: h,
     resizable: true,
-    minWidth: 140, // Đảm bảo cột không bị ép nhỏ hơn 140px trên điện thoại
-    formatter: cell => cell.getValue() ?? ''
+    minWidth: 150,
+    formatter: "textarea", // Tự động xuống dòng khi nội dung/tên quá dài
+    variableHeight: true
   }));
 
   if (tableInstance) {
@@ -169,7 +187,7 @@ function renderTable(data) {
   tableInstance = new Tabulator("#csvTable", {
     data: data,
     columns: columns,
-    layout: "fitDataFill", // Cho phép hiển thị độ rộng dữ liệu chuẩn và kích hoạt thanh cuộn ngang
+    layout: "fitDataFill", 
     pagination: "local",
     paginationSize: 15,
     paginationSizeSelector: [10, 15, 30, 50],
@@ -186,25 +204,42 @@ function renderTable(data) {
   });
 }
 
-csvSelect.addEventListener('change', (e) => loadCSV(e.target.value));
-
-searchInput.addEventListener('keyup', (e) => {
+// Xử lý tìm kiếm chuẩn xác
+function applyFilter() {
   if (!tableInstance) return;
-  const value = e.target.value.trim();
+  const keyword = searchInput.value.trim();
+  const searchScope = searchColumnSelect.value;
   
-  if (value === '') {
+  if (keyword === '') {
     tableInstance.clearFilter();
     return;
   }
 
-  const filters = tableInstance.getColumns().map(col => ({
-    field: col.getField(),
-    type: "like",
-    value: value
-  }));
+  if (searchScope === 'title') {
+    // Tìm các cột có tên dạng title, Title, name, Name...
+    const titleCol = tableInstance.getColumns().find(col => {
+      const field = col.getField().toLowerCase();
+      return field === 'title' || field === 'name' || field === 'game';
+    });
 
-  tableInstance.setFilter([filters]);
-});
+    const targetField = titleCol ? titleCol.getField() : tableInstance.getColumns()[0].getField();
+    
+    // Lọc duy nhất trên cột Tên Game
+    tableInstance.setFilter(targetField, "like", keyword);
+  } else {
+    // Lọc trên toàn bộ cột
+    const filters = tableInstance.getColumns().map(col => ({
+      field: col.getField(),
+      type: "like",
+      value: keyword
+    }));
+    tableInstance.setFilter([filters]);
+  }
+}
+
+csvSelect.addEventListener('change', (e) => loadCSV(e.target.value));
+searchInput.addEventListener('keyup', applyFilter);
+searchColumnSelect.addEventListener('change', applyFilter);
 
 listCSVFiles();
 </script>
