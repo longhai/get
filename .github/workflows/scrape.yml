@@ -2,35 +2,109 @@ name: Scrape GamesDB
 
 on:
   workflow_dispatch:
+
   schedule:
-    - cron: '0 3 1 * *'
+    - cron: "0 3 1 * *"
+
+permissions:
+  contents: write
 
 jobs:
+
   scrape:
+    name: Scrape ${{ matrix.name }}
+
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    timeout-minutes: 45
+
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+
+          - name: Arcade
+            platforms: "23,24,4917,4918,4919"
+
+          - name: Nintendo
+            platforms: "2,3,4,5,6,7,8,9,38,4970,4971,4922"
+
+          - name: Sega
+            platforms: "16,17,18,20,21,33,35,36"
+
+          - name: PlayStation
+            platforms: "10,11,13,39,4912,4923"
+
+          - name: Xbox
+            platforms: "12,15"
+
+          - name: Retro
+            platforms: "1,22,25,26,27,28,32,34,4911,4913,4914,4915,4920,4921,4924,4925,4926"
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v5
+
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: 24
+          cache: npm
 
       - name: Install dependencies
-        run: npm install cheerio node-fetch --no-save
+        run: npm ci
 
-      - name: Run integrated scraper
-        run: node scrape_gamesdb.js
+      - name: Scrape
+        env:
+          PLATFORM_IDS: ${{ matrix.platforms }}
+        run: node scraper.js
 
-      - name: Commit results
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraped-${{ matrix.name }}
+          path: data/
+          if-no-files-found: warn
+
+
+  merge-data:
+    name: Merge CSV and Commit
+
+    runs-on: ubuntu-latest
+
+    needs: scrape
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download all scraped data
+        uses: actions/download-artifact@v5
+        with:
+          pattern: scraped-*
+          path: data/
+          merge-multiple: true
+
+      - name: Show files
         run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "actions@github.com"
-          git add data/*.csv || echo "No data files"
-          git commit -m "Update scraped NES games data" || echo "No changes"
-          git push
+          echo "=== DATA ==="
+          find data -type f -name "*.csv" | sort
+          echo "=== COUNT ==="
+          find data -type f -name "*.csv" | wc -l
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/
+
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Update GamesDB data"
+            git push
+          fi
