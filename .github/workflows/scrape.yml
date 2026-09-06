@@ -2,98 +2,89 @@ name: Scrape GamesDB
 
 on:
   workflow_dispatch:
-
   schedule:
-    - cron: "0 3 1 * *"
+    - cron: '0 3 1 * *'
 
 permissions:
   contents: write
 
 jobs:
-
   scrape:
-    name: Scrape ${{ matrix.name }}
-
-    runs-on: ubuntu-latest
-
-    timeout-minutes: 60
-
     strategy:
       fail-fast: false
-
       matrix:
-        include:
+        group:
+          - name: arcade
+            ids: "23,24,4917,4918,4919"
+          - name: nintendo
+            ids: "2,3,4,5,6,7,8,9,38,4970,4971,4922"
+          - name: sega
+            ids: "16,17,18,20,21,33,35,36"
+          - name: sony
+            ids: "10,11,13,39,4912,4923"
+          - name: microsoft
+            ids: "12,15"
+          - name: retro
+            ids: "1,22,25,26,27,28,32,34,4911,4913,4914,4915,4920,4921,4924,4925,4926"
 
-          - name: Arcade
-            platforms: "23,24,4917,4918,4919"
-
-          - name: Nintendo
-            platforms: "2,3,4,5,6,7,8,9,38,4970,4971,4922"
-
-          - name: Sega
-            platforms: "16,17,18,20,21,33,35,36"
-
-          - name: PlayStation
-            platforms: "10,11,13,39,4912,4923"
-
-          - name: Xbox
-            platforms: "12,15"
-
-          - name: Retro
-            platforms: "1,22,25,26,27,28,32,34,4911,4913,4914,4915,4920,4921,4924,4925,4926"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install cheerio
 
-      - name: Scrape
+      - name: Scrape ${{ matrix.group.name }}
         env:
-          PLATFORM_IDS: ${{ matrix.platforms }}
+          PLATFORM_IDS: ${{ matrix.group.ids }}
         run: node scraper.js
 
-      - name: Upload scraped data
+      - name: Upload data
         uses: actions/upload-artifact@v4
         with:
-          name: scraped-${{ matrix.name }}
+          name: data-${{ matrix.group.name }}
           path: data/
-          if-no-files-found: warn
+          if-no-files-found: ignore
 
-
-  merge-data:
-    name: Merge CSV and Commit
-
-    runs-on: ubuntu-latest
-
+  merge:
     needs: scrape
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Download all scraped data
-        uses: actions/download-artifact@v5
+      - name: Download all data
+        uses: actions/download-artifact@v4
         with:
-          pattern: scraped-*
-          path: data/
-          merge-multiple: true
+          pattern: data-*
+          path: merged
+          merge-multiple: false
 
-      - name: Show files
+      - name: Merge CSV
+        shell: bash
         run: |
-          echo "=== DATA ==="
-          find data -type f -name "*.csv" | sort
-          echo "=== COUNT ==="
-          find data -type f -name "*.csv" | wc -l
+          mkdir -p data
+
+          find merged -type f -name "*.csv" | while read file; do
+            name=$(basename "$file")
+            target="data/$name"
+
+            if [ ! -f "$target" ]; then
+              cp "$file" "$target"
+            else
+              tail -n +2 "$file" >> "$target"
+            fi
+          done
 
       - name: Commit changes
         run: |
