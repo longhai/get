@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 const BASE_URL = "https://thegamesdb.net/list_games.php";
-const ALL_PLATFORM_IDS = [
+const PLATFORM_IDS = [
   // --- 🕹️ ARCADE & MÁY THÙNG ---
   23,   // Arcade (MAME / FBA / CPS1,2,3)
   24,   // SNES / SNK Neo Geo AES/MVS
