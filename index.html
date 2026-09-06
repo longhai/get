@@ -18,18 +18,23 @@
   .form-control, .form-select, .input-group-text { background-color: #2b2b2b; border-color: #3d3d3d; color: #fff; }
   .form-control:focus, .form-select:focus { background-color: #333; color: #fff; border-color: #0d6efd; box-shadow: none; }
   
-  /* Cấu hình Tabulator */
+  /* Styling cho Tabulator & Tooltip */
   .tabulator { font-size: 13px; border-radius: 8px; border: 1px solid #333; background-color: #1e1e1e; }
   .tabulator-cell { cursor: pointer; }
   .tabulator-cell:hover { background-color: #2a2a2a !important; }
   
-  /* Đảm bảo textarea formatter hiển thị tốt trên nền tối */
-  .tabulator-cell textarea {
-    background-color: transparent;
-    color: inherit;
-    border: none;
-    resize: none;
-    overflow: hidden;
+  /* Tùy chỉnh hiển thị Tooltip native của Tabulator */
+  .tabulator-tooltip {
+    background-color: #333 !important;
+    color: #fff !important;
+    border: 1px solid #555 !important;
+    border-radius: 6px !important;
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+    max-width: 350px !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5) !important;
   }
 </style>
 </head>
@@ -56,7 +61,7 @@
           <label for="searchInput" class="form-label fw-bold small text-muted mb-1">Tìm kiếm nhanh</label>
           <div class="input-group input-group-sm">
             <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
-            <input type="text" id="searchInput" class="form-control" placeholder="Nhập từ khóa..." disabled>
+            <input type="text" id="searchInput" class="form-control" placeholder="Nhập từ khóa tìm kiếm..." disabled>
           </div>
         </div>
       </div>
@@ -70,7 +75,7 @@
   </div>
 </div>
 
-<!-- Modal xem chi tiết -->
+<!-- Modal xem chi tiết ô -->
 <div class="modal fade" id="cellDetailModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content bg-dark text-light border-secondary">
@@ -159,24 +164,6 @@ async function loadCSV(url) {
   }
 }
 
-// Custom filter function để tìm kiếm chính xác hơn trên toàn bảng
-function customFilter(data, filterParams) {
-    let match = false;
-    const regex = new RegExp(filterParams.value, "i"); // "i" cho case-insensitive
-    
-    // Kiểm tra từng thuộc tính (cột) trong dòng dữ liệu
-    for (const key in data) {
-        if (data.hasOwnProperty(key)) {
-            const cellValue = String(data[key]);
-            if (regex.test(cellValue)) {
-                match = true;
-                break; // Tìm thấy ở một cột là đủ
-            }
-        }
-    }
-    return match;
-}
-
 function renderTable(data) {
   const headers = Object.keys(data[0]);
   
@@ -185,8 +172,12 @@ function renderTable(data) {
     field: h,
     resizable: true,
     minWidth: 140,
-    // Sử dụng formatter "textarea" để cho phép ngắt dòng và hiển thị toàn bộ text
-    formatter: "textarea", 
+    // Hàm hiển thị Tooltip khi rê chuột vào ô
+    tooltip: function(e, cell) {
+      const val = cell.getValue();
+      return val ? String(val) : false;
+    },
+    formatter: cell => cell.getValue() ?? ''
   }));
 
   if (tableInstance) {
@@ -196,14 +187,12 @@ function renderTable(data) {
   tableInstance = new Tabulator("#csvTable", {
     data: data,
     columns: columns,
-    layout: "fitDataFill", 
+    layout: "fitDataFill",
     pagination: "local",
     paginationSize: 15,
     paginationSizeSelector: [10, 15, 30, 50],
     movableColumns: true,
-    placeholder: "Không có dữ liệu",
-    // Cho phép hàng tự động điều chỉnh chiều cao dựa trên nội dung (cần thiết khi dùng textarea formatter)
-    resizableRows: true, 
+    placeholder: "Không tìm thấy dữ liệu phù hợp",
     cellClick: (e, cell) => {
       const fieldName = cell.getColumn().getField();
       const value = cell.getValue() ?? '';
@@ -217,17 +206,23 @@ function renderTable(data) {
 
 csvSelect.addEventListener('change', (e) => loadCSV(e.target.value));
 
+// Xử lý lọc chuẩn xác trên toàn bộ dữ liệu
 searchInput.addEventListener('keyup', (e) => {
   if (!tableInstance) return;
-  const value = e.target.value.trim();
+  const keyword = e.target.value.trim().toLowerCase();
   
-  if (value === '') {
+  if (keyword === '') {
     tableInstance.clearFilter();
     return;
   }
 
-  // Áp dụng Custom Filter Function
-  tableInstance.setFilter(customFilter, {value: value});
+  // Lọc chính xác bằng Custom Filter Function
+  tableInstance.setFilter((data) => {
+    return Object.values(data).some(val => {
+      if (val === null || val === undefined) return false;
+      return String(val).toLowerCase().includes(keyword);
+    });
+  });
 });
 
 listCSVFiles();
