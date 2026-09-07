@@ -20,7 +20,12 @@
   
   /* Styling cho Tabulator & Tooltip */
   .tabulator { font-size: 13px; border-radius: 8px; border: 1px solid #333; background-color: #1e1e1e; }
-  .tabulator-cell { cursor: pointer; }
+  .tabulator-cell { 
+    cursor: pointer; 
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Tự động thêm dấu ... khi ô bị thiếu không gian */
+  }
   .tabulator-cell:hover { background-color: #2a2a2a !important; }
   
   /* Tùy chỉnh hiển thị Tooltip native của Tabulator */
@@ -167,32 +172,18 @@ async function loadCSV(url) {
 function renderTable(data) {
   const headers = Object.keys(data[0]);
   
-  const columns = headers.map(h => {
-    const fieldLower = h.toLowerCase();
-    
-    // Tùy chỉnh độ rộng tối thiểu/cố định thông minh theo tên cột
-    let minWidth = 100;
-    let width = undefined;
-
-    if (fieldLower === 'id' || fieldLower === 'stt' || fieldLower === 'no') {
-      width = 70;
-    } else if (fieldLower.includes('date') || fieldLower.includes('ngay') || fieldLower.includes('year')) {
-      width = 110;
-    }
-
-    return {
-      title: h,
-      field: h,
-      width: width,
-      minWidth: minWidth,
-      resizable: true,
-      tooltip: function(e, cell) {
-        const val = cell.getValue();
-        return val ? String(val) : false;
-      },
-      formatter: cell => cell.getValue() ?? ''
-    };
-  });
+  const columns = headers.map(h => ({
+    title: h,
+    field: h,
+    resizable: true,
+    minWidth: 100,
+    maxWidth: 300, // Khống chế chiều rộng tối đa cho mỗi cột
+    tooltip: function(e, cell) {
+      const val = cell.getValue();
+      return val ? String(val) : false;
+    },
+    formatter: cell => cell.getValue() ?? ''
+  }));
 
   if (tableInstance) {
     tableInstance.destroy();
@@ -201,7 +192,7 @@ function renderTable(data) {
   tableInstance = new Tabulator("#csvTable", {
     data: data,
     columns: columns,
-    layout: "fitData", // Ôm sát dữ liệu thực tế, không kéo giãn dư thừa cột cuối
+    layout: "fitColumns", // Chia đều chiều rộng các cột vừa vặn khung hình
     pagination: "local",
     paginationSize: 15,
     paginationSizeSelector: [10, 15, 30, 50],
