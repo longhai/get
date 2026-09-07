@@ -13,64 +13,17 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
 <style>
-  body { 
-    background-color: #121212; 
-    color: #e0e0e0; 
-    padding: 16px; 
-    font-family: system-ui, -apple-system, sans-serif; 
-  }
+  body { background-color: #121212; color: #e0e0e0; padding: 12px; font-family: system-ui, -apple-system, sans-serif; }
+  .card-custom { background-color: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 12px; }
+  .form-control, .form-select, .input-group-text { background-color: #2b2b2b; border-color: #3d3d3d; color: #fff; }
+  .form-control:focus, .form-select:focus { background-color: #333; color: #fff; border-color: #0d6efd; box-shadow: none; }
   
-  /* Giới hạn chiều ngang tổng thể */
-  .max-width-lg { 
-    max-width: 1200px; 
-    margin: 0 auto; 
-  }
-
-  .card-custom { 
-    background-color: #1e1e1e; 
-    border: 1px solid #2d2d2d; 
-    border-radius: 12px; 
-  }
+  /* Styling cho Tabulator & Tooltip */
+  .tabulator { font-size: 13px; border-radius: 8px; border: 1px solid #333; background-color: #1e1e1e; }
+  .tabulator-cell { cursor: pointer; }
+  .tabulator-cell:hover { background-color: #2a2a2a !important; }
   
-  .form-control, .form-select, .input-group-text { 
-    background-color: #2b2b2b; 
-    border-color: #3d3d3d; 
-    color: #fff; 
-  }
-  
-  .form-control:focus, .form-select:focus { 
-    background-color: #333; 
-    color: #fff; 
-    border-color: #0d6efd; 
-    box-shadow: none; 
-  }
-
-  /* Khung chứa bảng xử lý tràn chiều ngang */
-  .table-container {
-    width: 100%;
-    overflow-x: auto;
-  }
-  
-  /* Styling Tabulator */
-  .tabulator { 
-    font-size: 13px; 
-    border-radius: 8px; 
-    border: 1px solid #333; 
-    background-color: #1e1e1e; 
-    width: 100%;
-  }
-  
-  .tabulator-cell { 
-    cursor: pointer; 
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  
-  .tabulator-cell:hover { 
-    background-color: #2a2a2a !important; 
-  }
-  
-  /* Custom Tooltip */
+  /* Tùy chỉnh hiển thị Tooltip native của Tabulator */
   .tabulator-tooltip {
     background-color: #333 !important;
     color: #fff !important;
@@ -116,7 +69,7 @@
   </div>
 
   <div class="card card-custom">
-    <div class="card-body p-2 table-container">
+    <div class="card-body p-2">
       <div id="csvTable"></div>
     </div>
   </div>
@@ -214,17 +167,32 @@ async function loadCSV(url) {
 function renderTable(data) {
   const headers = Object.keys(data[0]);
   
-  const columns = headers.map(h => ({
-    title: h,
-    field: h,
-    resizable: true,
-    minWidth: 100,
-    tooltip: function(e, cell) {
-      const val = cell.getValue();
-      return val ? String(val) : false;
-    },
-    formatter: cell => cell.getValue() ?? ''
-  }));
+  const columns = headers.map(h => {
+    const fieldLower = h.toLowerCase();
+    
+    // Tùy chỉnh độ rộng tối thiểu/cố định thông minh theo tên cột
+    let minWidth = 100;
+    let width = undefined;
+
+    if (fieldLower === 'id' || fieldLower === 'stt' || fieldLower === 'no') {
+      width = 70;
+    } else if (fieldLower.includes('date') || fieldLower.includes('ngay') || fieldLower.includes('year')) {
+      width = 110;
+    }
+
+    return {
+      title: h,
+      field: h,
+      width: width,
+      minWidth: minWidth,
+      resizable: true,
+      tooltip: function(e, cell) {
+        const val = cell.getValue();
+        return val ? String(val) : false;
+      },
+      formatter: cell => cell.getValue() ?? ''
+    };
+  });
 
   if (tableInstance) {
     tableInstance.destroy();
@@ -233,8 +201,7 @@ function renderTable(data) {
   tableInstance = new Tabulator("#csvTable", {
     data: data,
     columns: columns,
-    layout: "fitColumns", // Ép vừa khít khung màn hình
-    responsiveLayout: "collapse", // Tự co lại khi quá nhỏ
+    layout: "fitData", // Ôm sát dữ liệu thực tế, không kéo giãn dư thừa cột cuối
     pagination: "local",
     paginationSize: 15,
     paginationSizeSelector: [10, 15, 30, 50],
