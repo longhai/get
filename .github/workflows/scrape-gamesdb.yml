@@ -1,0 +1,36 @@
+name: Scrape GamesDB
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Chạy tự động lúc 03:00 AM UTC vào ngày 1 hàng tháng
+    - cron: '0 3 1 * *'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 330
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Run integrated scraper
+        run: node scrape_gamesdb.js
+
+      - name: Commit results
+        run: |
+          git config user.name "GitHub Action Bot"
+          git config user.email "actions@github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Update scraped games data [skip ci]"
+          git push origin HEAD:main
