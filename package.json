@@ -1,14 +1,1 @@
-{
-  "name": "thegamesdb-scraper",
-  "version": "1.0.0",
-  "description": "Scraper for TheGamesDB game information with pagination, resume, and CSV export.",
-  "main": "scrape_gamesdb.js",
-  "type": "module",
-  "scripts": {
-    "start": "node scrape_gamesdb.js"
-  },
-  "dependencies": {
-    "cheerio": "^1.0.0-rc.12",
-    "node-fetch": "^3.3.2"
-  }
-}
+{"description":"Scraper for TheGamesDB game information with pagination, resume, and CSV export.","main":"scrape_gamesdb.js","name":"thegamesdb-scraper","scripts":{"start":"node scrape_gamesdb.js"},"type":"module","version":"1.0.0"}
